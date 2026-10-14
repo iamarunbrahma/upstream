@@ -1,6 +1,8 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fundingEvents } from "../db/schema";
+import type { PayPalApi } from "../paypal/api";
+import { PayPalError } from "../paypal/client";
 import { toCents } from "../paypal/money";
 
 export const REFUND_EVENTS = ["PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED", "PAYMENT.SALE.REFUNDED", "PAYMENT.SALE.REVERSED"];
@@ -36,12 +38,36 @@ function refundCents(r: Resource): number {
   return toCents(value.replace(/^-/, ""));
 }
 
+export interface RefundDeps {
+  db: Db;
+  paypal: PayPalApi;
+}
+
+/**
+ * PayPal's current record of the refund an event names: PayPal resends the same event body on every retry, so
+ * only a fresh read can show a pending refund completing. A sale reversal is a final, one-off event, used as sent.
+ */
+async function currentRefund(paypal: PayPalApi, type: string, event: Resource): Promise<Resource | null> {
+  if (type === "PAYMENT.SALE.REVERSED") return event;
+  const id = typeof event.id === "string" ? event.id : null;
+  if (!id) return null;
+  try {
+    return type.startsWith("PAYMENT.CAPTURE.") ? await paypal.getRefund(id) : await paypal.getSaleRefund(id);
+  } catch (e) {
+    if (e instanceof PayPalError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 /**
  * Takes refunded or reversed money back out of the funder's budget, as a negative funding event. Never takes
  * back more than the payment added, however many refunds name it. The same refund twice is recorded once.
  * Fails closed: a refund for a payment not recorded yet, or still pending, is asked for again.
  */
-export async function recordRefund(db: Db, type: string, r: Resource): Promise<RefundOutcome> {
+export async function recordRefund(deps: RefundDeps, type: string, event: Resource): Promise<RefundOutcome> {
+  const r = await currentRefund(deps.paypal, type, event);
+  if (!r) return REFUND_UNREADABLE;
+  const db = deps.db;
   const state = String(r.status ?? r.state ?? "").toUpperCase();
   if (["FAILED", "CANCELLED", "CANCELED", "DENIED"].includes(state)) return "ignored";
   if (state === "PENDING") return "refund not completed yet";

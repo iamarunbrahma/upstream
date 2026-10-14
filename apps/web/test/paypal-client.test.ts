@@ -148,6 +148,14 @@ describe("createPayPalApi", () => {
     expect(f.calls[2]!.url).toBe("https://api.test/v1/payments/payouts/B-1?page_size=1000");
   });
 
+  it("reads a capture refund (v2) and a sale refund (v1) by id", async () => {
+    const f = fakeFetch([token, { status: 200, body: { id: "R2", status: "COMPLETED" } }, { status: 200, body: { id: "R1", state: "completed" } }]);
+    const api = createPayPalApi(createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: f.impl }));
+    expect((await api.getRefund("R2")).status).toBe("COMPLETED");
+    expect((await api.getSaleRefund("R1")).state).toBe("completed");
+    expect(f.calls.slice(1).map((c) => c.url)).toEqual(["https://api.test/v2/payments/refunds/R2", "https://api.test/v1/payments/refund/R1"]);
+  });
+
   it("reads one payout line by PayPal's item id", async () => {
     const f = fakeFetch([token, { status: 200, body: { payout_item_id: "PI-1", transaction_status: "SUCCESS", payout_batch_id: "B-1" } }]);
     const api = createPayPalApi(createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: f.impl }));

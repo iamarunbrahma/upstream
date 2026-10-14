@@ -69,7 +69,7 @@ async function dispatch(deps: WebhookDeps, type: string, r: Record<string, unkno
   }
   if (type === "PAYMENT.CAPTURE.COMPLETED") return creditCapture(deps, r);
   if (type.startsWith("PAYMENT.PAYOUTS-ITEM.")) return refreshPayoutItem(deps, r as PaypalPayoutItem);
-  if (REFUND_EVENTS.includes(type)) return recordRefund(deps.db, type, r);
+  if (REFUND_EVENTS.includes(type)) return recordRefund(deps, type, r);
   return "ignored";
 }
 

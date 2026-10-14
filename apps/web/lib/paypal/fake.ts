@@ -11,6 +11,9 @@ export class FakePayPal implements PayPalApi {
   subscriptions = new Map<string, PaypalSubscription & { transactions: PaypalSubscriptionTxn[] }>();
   orders = new Map<string, PaypalOrder & { cents: number; approvedBy: string | null }>();
   payoutBatches = new Map<string, { id: string; senderBatchId: string; status: string; items: PaypalPayoutItem[] }>();
+  /** Refunds PayPal knows, by refund id: capture refunds (v2) and sale refunds (v1). */
+  refunds = new Map<string, Record<string, unknown>>();
+  saleRefunds = new Map<string, Record<string, unknown>>();
   private failures = new Map<string, Error>();
   private lostAnswers = new Set<string>();
   private seq = 0;
@@ -203,6 +206,20 @@ export class FakePayPal implements PayPalApi {
       if (item) return structuredClone(item);
     }
     throw new PayPalError(404, "INVALID_RESOURCE_ID", "item not found", null);
+  }
+
+  async getRefund(refundId: string) {
+    this.enter("getRefund");
+    const r = this.refunds.get(refundId);
+    if (!r) throw new PayPalError(404, "INVALID_RESOURCE_ID", "refund not found", null);
+    return structuredClone(r);
+  }
+
+  async getSaleRefund(refundId: string) {
+    this.enter("getSaleRefund");
+    const r = this.saleRefunds.get(refundId);
+    if (!r) throw new PayPalError(404, "INVALID_RESOURCE_ID", "refund not found", null);
+    return structuredClone(r);
   }
 
   /** PayPal finishes (or fails) one payout line. */

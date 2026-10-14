@@ -88,6 +88,10 @@ export interface PayPalApi {
   getPayoutBatch(batchId: string): Promise<PaypalPayoutBatch>;
   /** PayPal's current word on one payout line, by PayPal's own payout_item_id. */
   getPayoutItem(payoutItemId: string): Promise<PaypalPayoutItem>;
+  /** A refund of a capture (v2): id, status, amount { value, currency_code }, and an "up" link to the capture. */
+  getRefund(refundId: string): Promise<Record<string, unknown>>;
+  /** A refund of a subscription sale (v1): id, state, amount { total, currency }, sale_id. */
+  getSaleRefund(refundId: string): Promise<Record<string, unknown>>;
 }
 
 const WEBHOOK_HEADERS = ["paypal-auth-algo", "paypal-cert-url", "paypal-transmission-id", "paypal-transmission-sig", "paypal-transmission-time"] as const;
@@ -188,6 +192,12 @@ export function createPayPalApi(http: PayPalHttp): PayPalApi {
     },
     getPayoutItem(payoutItemId) {
       return http.request("GET", `/v1/payments/payouts-item/${id(payoutItemId)}`);
+    },
+    getRefund(refundId) {
+      return http.request("GET", `/v2/payments/refunds/${id(refundId)}`);
+    },
+    getSaleRefund(refundId) {
+      return http.request("GET", `/v1/payments/refund/${id(refundId)}`);
     },
   };
 }
