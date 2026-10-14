@@ -168,6 +168,8 @@ export const payoutItems = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     settlementId: uuid("settlement_id").notNull().references(() => settlements.id),
     login: text("login").notNull(),
+    /** The GitHub account paid. Null on lines from before GitHub ids were kept. */
+    githubId: integer("github_id"),
     payerId: text("payer_id").notNull(),
     cents: integer("cents").notNull(),
     paypalItemId: text("paypal_item_id"),
@@ -190,7 +192,10 @@ export const accruals = pgTable(
     settlementId: uuid("settlement_id").notNull().references(() => settlements.id),
     funderId: uuid("funder_id").notNull().references(() => accounts.id),
     login: text("login").notNull(),
-    /** The GitHub account that earned this money. It, not the login, decides who is paid. Null on rows from before ids were kept. */
+    /**
+     * The GitHub account that earned this money. It alone decides who is paid: a login can change hands.
+     * Null on rows from before ids were kept; those are never paid and go back to the funder after 90 days.
+     */
     githubId: integer("github_id"),
     ecosystem: text("ecosystem", { enum: ["npm", "pypi"] }).notNull(),
     name: text("name").notNull(),

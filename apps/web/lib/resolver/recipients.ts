@@ -133,7 +133,10 @@ export async function resolveRecipients(repo: RepoRef, gh: GithubGet, now: Date)
   }
 }
 
-/** resolveRecipients, remembered for 7 days per repo. While GitHub says "later", an older answer is better than none. */
+/**
+ * resolveRecipients, remembered for 7 days per repo. While GitHub says "later", an older answer is better than
+ * none, unless it predates GitHub ids: money can't be filed safely without them.
+ */
 export async function recipientsFor(db: Db, gh: GithubGet, repo: RepoRef, now: Date): Promise<RepoRecipients | "later"> {
   const key = `${repo.owner}/${repo.name}`;
   const [hit] = await db.select().from(recipientCache).where(eq(recipientCache.repo, key)).limit(1);
@@ -141,7 +144,7 @@ export async function recipientsFor(db: Db, gh: GithubGet, repo: RepoRef, now: D
   const withIds = hit?.data.recipients.every((r) => typeof r.githubId === "number") ?? false;
   if (hit && withIds && now.getTime() - hit.fetchedAt.getTime() < RECIPIENT_TTL_MS) return hit.data;
   const fresh = await resolveRecipients(repo, gh, now);
-  if (fresh === "later") return hit?.data ?? "later";
+  if (fresh === "later") return hit && withIds ? hit.data : "later";
   await db
     .insert(recipientCache)
     .values({ repo: key, data: fresh, fetchedAt: now })

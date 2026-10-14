@@ -94,11 +94,13 @@ async function settleFunder(tx: Db, settlementId: string, funderId: string, foun
     if (!who || who.recipients.length === 0 || perPkg[i] === 0) return;
     const parts = splitCents(perPkg[i]!, who.recipients.map((r) => r.shareBp));
     who.recipients.forEach((r, j) => {
+      // Money is filed by GitHub account; a recipient GitHub gave no account id for can't be paid safely.
+      if (typeof r.githubId !== "number") return;
       const room = Math.max(0, MONTHLY_CAP_CENTS - (given.get(r.login) ?? 0));
       const cents = Math.min(parts[j]!, room);
       if (cents <= 0) return;
       given.set(r.login, (given.get(r.login) ?? 0) + cents);
-      rows.push({ settlementId, funderId, login: r.login, githubId: r.githubId ?? null, ecosystem: w.ecosystem, name: w.name, cents, createdAt: now });
+      rows.push({ settlementId, funderId, login: r.login, githubId: r.githubId, ecosystem: w.ecosystem, name: w.name, cents, createdAt: now });
     });
   });
   if (rows.length > 0) await tx.insert(accruals).values(rows);

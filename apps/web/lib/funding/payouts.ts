@@ -20,11 +20,10 @@ export const UNCLAIMED_RETURN_MS = 90 * DAY;
 export const RESEND_WINDOW_MS = 25 * DAY;
 
 /**
- * Whether accrual `a` belongs to maintainer `m`: by GitHub account when the accrual knows it, so a renamed or
- * reused login never moves money; by login only for rows from before GitHub ids were kept.
+ * Whether an accrual belongs to maintainer `m`: only by GitHub account, never by login, since a login can
+ * change hands. An accrual without a GitHub account belongs to nobody and goes back to the funder after 90 days.
  */
-const owns = (m: string) =>
-  sql.raw(`((accruals.github_id is not null and ${m}.github_id = accruals.github_id) or (accruals.github_id is null and ${m}.login = accruals.login))`);
+const owns = (m: string) => sql.raw(`(accruals.github_id is not null and ${m}.github_id = accruals.github_id)`);
 
 export interface QueueSummary {
   returnedCents: number;
@@ -80,16 +79,15 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date): Pro
     .orderBy(maintainers.login);
   let queuedCents = 0;
   for (const r of ready) {
-    const [line] = await tx.insert(payoutItems).values({ settlementId, login: r.login, payerId: r.payerId!, cents: 0, updatedAt: now }).returning({ id: payoutItems.id });
+    const [line] = await tx
+      .insert(payoutItems)
+      .values({ settlementId, login: r.login, githubId: r.githubId, payerId: r.payerId!, cents: 0, updatedAt: now })
+      .returning({ id: payoutItems.id });
     // The line pays exactly what this update moved onto it, whatever changed since the sum above.
-    const theirs =
-      r.githubId !== null
-        ? sql`(${accruals.githubId} = ${r.githubId} or (${accruals.githubId} is null and ${accruals.login} = ${r.login}))`
-        : sql`(${accruals.githubId} is null and ${accruals.login} = ${r.login})`;
     const moved = await tx
       .update(accruals)
       .set({ status: "queued", payoutItemId: line!.id })
-      .where(and(eq(accruals.status, "held"), theirs))
+      .where(and(eq(accruals.status, "held"), eq(accruals.githubId, r.githubId!)))
       .returning({ cents: accruals.cents });
     const cents = total(moved);
     await tx.update(payoutItems).set({ cents }).where(eq(payoutItems.id, line!.id));

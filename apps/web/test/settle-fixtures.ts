@@ -8,6 +8,8 @@ import { FakePayPal } from "../lib/paypal/fake";
 
 export const NOW = new Date("2026-10-14T10:00:00Z");
 export const DAY = 86_400_000;
+/** The GitHub accounts behind the fixture's logins. */
+export const GITHUB_IDS: Record<string, number> = { alice: 101, bob: 102, carol: 103 };
 
 /**
  * A database, a fake PayPal and fake package lookups for settlement tests.
@@ -18,8 +20,8 @@ export async function settlementWorld() {
   await migrateDb(db, "pglite");
   const paypal = new FakePayPal();
   const lookups: Record<string, RepoRecipients | "later" | null> = {
-    "npm:a": { source: "funding", recipients: [{ login: "alice", shareBp: 5000 }, { login: "bob", shareBp: 5000 }] },
-    "npm:b": { source: "committers", recipients: [{ login: "carol", shareBp: 10_000 }] },
+    "npm:a": { source: "funding", recipients: [{ login: "alice", githubId: 101, shareBp: 5000 }, { login: "bob", githubId: 102, shareBp: 5000 }] },
+    "npm:b": { source: "committers", recipients: [{ login: "carol", githubId: 103, shareBp: 10_000 }] },
   };
   /** Packages whose registry can't be reached right now. */
   const registryDown = new Set<string>();
@@ -72,9 +74,9 @@ export async function settlementWorld() {
       );
       return r!.id;
     },
-    /** A maintainer who linked this PayPal account `daysAgo` days before the current clock. */
+    /** A maintainer who signed in and linked this PayPal account `daysAgo` days before the current clock. */
     claim: (login: string, payerId: string, daysAgo: number) =>
-      db.insert(maintainers).values({ login, paypalPayerId: payerId, claimedAt: new Date(clock.getTime() - daysAgo * DAY) }),
+      db.insert(maintainers).values({ login, githubId: GITHUB_IDS[login], paypalPayerId: payerId, claimedAt: new Date(clock.getTime() - daysAgo * DAY) }),
     /** Cents set aside from this funder, per maintainer and status. */
     async owed(funderId: string, status?: "held" | "queued" | "paid" | "returned") {
       const rows = await db

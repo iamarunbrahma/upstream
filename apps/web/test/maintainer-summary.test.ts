@@ -26,14 +26,17 @@ beforeEach(async () => {
 async function money() {
   const { accountId } = await createDevice(db, null);
   const [s] = await db.insert(settlements).values({}).returning();
-  const [line] = await db.insert(payoutItems).values({ settlementId: s!.id, login: "alice", payerId: "P-A", cents: 700, status: "SUCCESS", updatedAt: OCT }).returning();
-  const owed = { settlementId: s!.id, funderId: accountId, login: "alice", ecosystem: "npm" as const };
+  const [line] = await db.insert(payoutItems).values({ settlementId: s!.id, login: "alice", githubId: 7, payerId: "P-A", cents: 700, status: "SUCCESS", updatedAt: OCT }).returning();
+  // Someone else's payout filed under the same login "alice" (an earlier holder of the name).
+  await db.insert(payoutItems).values({ settlementId: s!.id, login: "alice", githubId: 99, payerId: "P-X", cents: 999, status: "SUCCESS", updatedAt: OCT });
+  const owed = { settlementId: s!.id, funderId: accountId, login: "alice", githubId: 7, ecosystem: "npm" as const };
   await db.insert(accruals).values([
     { ...owed, name: "left-pad", cents: 700, status: "paid", payoutItemId: line!.id, createdAt: SEP },
     { ...owed, name: "left-pad", cents: 250, status: "queued", createdAt: OCT },
     { ...owed, name: "right-pad", cents: 120, status: "held", createdAt: OCT },
     { ...owed, name: "right-pad", cents: 999, status: "returned", returnReason: "unclaimed", createdAt: OCT },
-    { ...owed, login: "bob", name: "left-pad", cents: 50, createdAt: OCT },
+    { ...owed, login: "bob", githubId: 8, name: "left-pad", cents: 50, createdAt: OCT },
+    { ...owed, githubId: null, name: "left-pad", cents: 30, createdAt: OCT },
     { ...owed, login: "alice", githubId: 99, name: "left-pad", cents: 40, createdAt: OCT },
     { ...owed, login: "alice-before-rename", githubId: 7, name: "right-pad", cents: 5, createdAt: OCT },
   ]);

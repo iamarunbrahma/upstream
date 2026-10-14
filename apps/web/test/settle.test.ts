@@ -51,7 +51,7 @@ describe("settle", () => {
     expect(await settle(w.deps)).toMatchObject({ settledFunders: 0, waitingFunders: 1 });
     expect(await w.owed(f)).toEqual({});
     expect(await settledBy(r)).toBeNull();
-    w.lookups["npm:b"] = { source: "committers", recipients: [{ login: "carol", shareBp: 10_000 }] };
+    w.lookups["npm:b"] = { source: "committers", recipients: [{ login: "carol", githubId: 103, shareBp: 10_000 }] };
     await settle(w.deps);
     expect(await w.owed(f)).toEqual({ alice: 125, bob: 125, carol: 250 });
   });
@@ -65,6 +65,15 @@ describe("settle", () => {
     w.registryDown.clear();
     await settle(w.deps);
     expect(await w.owed(f)).toEqual({ alice: 125, bob: 125, carol: 250 });
+  });
+
+  it("keeps the share of a recipient GitHub gave no account id for in the budget", async () => {
+    w.lookups["npm:b"] = { source: "committers", recipients: [{ login: "ghost", githubId: null, shareBp: 10_000 }] };
+    const f = await w.funder(500);
+    await w.receipt(f, { b: 10_000 });
+    await settle(w.deps);
+    expect(await w.owed(f)).toEqual({});
+    expect(await balanceCents(w.db, f)).toBe(500);
   });
 
   it("waits for money: approved receipts with an empty budget are settled once money arrives", async () => {

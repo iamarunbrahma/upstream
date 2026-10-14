@@ -43,6 +43,13 @@
       "when": 1791980785863,
       "tag": "0005_amused_black_bird",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791981200439,
+      "tag": "0006_furry_doorman",
+      "breakpoints": true
     }
   ]
 }

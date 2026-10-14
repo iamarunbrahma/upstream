@@ -1,0 +1,1 @@
+ALTER TABLE "payout_items" ADD COLUMN "github_id" integer;

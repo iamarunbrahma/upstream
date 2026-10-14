@@ -59,7 +59,7 @@ describe("queuePayouts", () => {
     await w.claim("carol", "PAYER-CAROL", 8);
     const [old] = await w.db.insert(settlements).values({}).returning();
     const [oldLine] = await w.db.insert(payoutItems).values({ settlementId: old!.id, login: "carol", payerId: "PAYER-CAROL", cents: 1000 }).returning();
-    const owedTo = { funderId: f, login: "carol", ecosystem: "npm" as const, name: "b" };
+    const owedTo = { funderId: f, login: "carol", githubId: 103, ecosystem: "npm" as const, name: "b" };
     await w.db.insert(accruals).values([
       { ...owedTo, settlementId: old!.id, cents: 1000, status: "queued", payoutItemId: oldLine!.id },
       { ...owedTo, settlementId: old!.id, cents: 500, status: "held" },
@@ -91,6 +91,21 @@ describe("paying the right person", () => {
     await settle(w.deps);
     await payOut(w.deps);
     expect(batches()[0]!.items.map((i) => [i.payout_item?.receiver, i.payout_item?.amount?.value])).toEqual([["PAYER-BOB", "10.00"]]);
+  });
+});
+
+describe("money filed without a GitHub account", () => {
+  it("is never paid to whoever holds that login, and goes back to the funder after 90 days", async () => {
+    const f = await w.funder(1000);
+    await w.claim("carol", "PAYER-CAROL", 8);
+    const [old] = await w.db.insert(settlements).values({}).returning();
+    await w.db.insert(accruals).values({ settlementId: old!.id, funderId: f, login: "carol", githubId: null, ecosystem: "npm", name: "b", cents: 1000 });
+    await settle(w.deps);
+    await payOut(w.deps);
+    expect(batches()).toHaveLength(0);
+    w.at(91);
+    expect(await settle(w.deps)).toMatchObject({ returnedCents: 1000 });
+    expect(await balanceCents(w.db, f)).toBe(1000);
   });
 });
 

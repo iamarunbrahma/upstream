@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { accruals, maintainers, payoutItems, receiptItems } from "../db/schema";
 import { FIRST_PAYOUT_HOLD_MS } from "../funding/payouts";
@@ -18,13 +18,13 @@ export interface MaintainerSummary {
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
- * What a maintainer is owed and has been paid: money their GitHub account earned, whatever login it was filed
- * under (and, for rows from before GitHub ids were kept, money filed under their login). Money given back is left out.
+ * What a maintainer is owed and has been paid: only money and payouts of their own GitHub account, whatever
+ * login they were filed under. Nothing is matched by login, since a login can change hands. Money given back is left out.
  */
 export async function maintainerSummary(db: Db, who: { login: string; githubId: number }): Promise<MaintainerSummary> {
   const { login, githubId } = who;
   const [me] = await db.select({ payerId: maintainers.paypalPayerId, claimedAt: maintainers.claimedAt }).from(maintainers).where(eq(maintainers.githubId, githubId)).limit(1);
-  const mine = and(or(eq(accruals.githubId, githubId), and(isNull(accruals.githubId), eq(accruals.login, login))), ne(accruals.status, "returned"));
+  const mine = and(eq(accruals.githubId, githubId), ne(accruals.status, "returned"));
 
   const byStatus = await db
     .select({ status: accruals.status, cents: sql<string>`sum(${accruals.cents})` })
@@ -44,7 +44,7 @@ export async function maintainerSummary(db: Db, who: { login: string; githubId: 
   const payouts = await db
     .select({ at: payoutItems.updatedAt, cents: payoutItems.cents, status: payoutItems.status })
     .from(payoutItems)
-    .where(eq(payoutItems.login, login))
+    .where(eq(payoutItems.githubId, githubId))
     .orderBy(desc(payoutItems.updatedAt))
     .limit(12);
 

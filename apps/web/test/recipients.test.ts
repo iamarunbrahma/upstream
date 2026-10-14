@@ -133,6 +133,14 @@ describe("recipientsFor", () => {
     expect(await recipientsFor(db, gh.get, repo, NOW)).toEqual({ source: "committers", recipients: [{ login: "alice", githubId: idOf("alice"), shareBp: 10_000 }] });
   });
 
+  it("won't fall back to a remembered answer without GitHub ids while GitHub says try later", async () => {
+    const db = createPgliteDb();
+    await migrateDb(db, "pglite");
+    await db.insert(recipientCache).values({ repo: "acme/widget", data: { source: "committers", recipients: [{ login: "alice", shareBp: 10_000 }] }, fetchedAt: NOW });
+    const limited = github({ [`${base}/contents/.github/FUNDING.yml`]: { status: 403, body: {} } });
+    expect(await recipientsFor(db, limited.get, repo, NOW)).toBe("later");
+  });
+
   it("remembers a repo's recipients for 7 days, and uses the old answer while GitHub says try later", async () => {
     const db = createPgliteDb();
     await migrateDb(db, "pglite");
