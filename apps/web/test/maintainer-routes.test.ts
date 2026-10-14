@@ -6,6 +6,7 @@ import { maintainers } from "../lib/db/schema";
 import type { GithubOAuth } from "../lib/maintainers/github-oauth";
 import type { PayPalIdentity } from "../lib/maintainers/paypal-identity";
 import { MAINTAINER_COOKIE, OAUTH_COOKIE, maintainerForSession } from "../lib/maintainers/sessions";
+import { createRateLimiter } from "../lib/limits";
 import type { Deps } from "../lib/receipts/service";
 
 const h = vi.hoisted(() => ({ deps: null as unknown as Deps }));
@@ -90,6 +91,14 @@ describe("GitHub sign-in routes", () => {
     s = await start();
     const taken = await githubCallback(get(`/maintainer/github/callback?code=bob&state=${s}`, { [OAUTH_COOKIE]: s }));
     expect(taken.status).toBe(409);
+  });
+
+  it("limit how often one visitor can start signing in", async () => {
+    h.deps = { ...h.deps, signInLimiter: createRateLimiter({ limit: 2, windowMs: 60_000 }) } as unknown as Deps;
+    const start = () => githubStart(new Request("http://up.test/maintainer/github/start", { headers: { "x-forwarded-for": "203.0.113.9" } }));
+    expect((await start()).status).toBe(302);
+    expect((await start()).status).toBe(302);
+    expect((await start()).status).toBe(429);
   });
 
   it("are switched off until GitHub sign-in is set up", async () => {

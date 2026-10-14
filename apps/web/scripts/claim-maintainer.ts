@@ -1,5 +1,6 @@
-// Sandbox only, until maintainers can sign in themselves (Plan 2c): records that a GitHub account can be paid
-// at a PayPal account id, as if they had linked it `daysAgo` days ago (default 8, past the first-payout hold).
+// Sandbox only, for seeding a demo maintainer: records that a GitHub login can be paid at a PayPal account id,
+// as if they had linked it `daysAgo` days ago (default 8, past the first-payout hold). Real maintainers sign in
+// with GitHub and link PayPal themselves at /maintainer; if that login signs in later, the seeded claim is theirs.
 // Usage: pnpm --filter web claim-maintainer <github-login> <paypal-payer-id> [days-ago]
 import { getDeps } from "../lib/deps";
 import { maintainers } from "../lib/db/schema";

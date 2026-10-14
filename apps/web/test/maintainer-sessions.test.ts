@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createPgliteDb, type Db } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
-import { maintainers } from "../lib/db/schema";
+import { maintainers, oauthStates } from "../lib/db/schema";
 import {
   MAINTAINER_COOKIE,
   OAUTH_COOKIE,
@@ -37,6 +37,12 @@ describe("OAuth states", () => {
     expect(await consumeOAuthState(db, "paypal", state, state, late)).toBeNull();
     const fresh = await issueOAuthState(db, "paypal", 42, NOW);
     expect(await consumeOAuthState(db, "paypal", fresh, fresh, NOW)).toEqual({ githubId: 42 });
+  });
+
+  it("clears out sign-ins nobody finished, so they can't pile up", async () => {
+    await issueOAuthState(db, "github", null, NOW);
+    await issueOAuthState(db, "github", null, new Date(NOW.getTime() + 2 * 86_400_000));
+    expect(await db.select().from(oauthStates)).toHaveLength(1);
   });
 
   it("travels in a short-lived cookie that only the sign-in pages see", () => {

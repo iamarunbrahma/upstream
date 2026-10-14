@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, lt } from "drizzle-orm";
 import { hashToken } from "../auth";
 import type { Db } from "../db/client";
 import { maintainerSessions, maintainers, oauthStates } from "../db/schema";
@@ -14,6 +14,8 @@ const later = (now: Date, ms: number) => new Date(now.getTime() + ms);
 
 /** Starts a GitHub sign-in or a PayPal link. The returned state goes to the provider and into the OAuth cookie. */
 export async function issueOAuthState(db: Db, provider: "github" | "paypal", githubId: number | null, now: Date = new Date()): Promise<string> {
+  // Sign-ins nobody finished are cleared out a day after they expire, so they can't pile up.
+  await db.delete(oauthStates).where(lt(oauthStates.expiresAt, new Date(now.getTime() - 24 * 60 * 60 * 1000)));
   const state = secret();
   await db.insert(oauthStates).values({ stateHash: hashToken(state), provider, githubId, expiresAt: later(now, OAUTH_STATE_TTL_MS) });
   return state;

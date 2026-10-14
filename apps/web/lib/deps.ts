@@ -35,6 +35,7 @@ export function getDeps(): Promise<Deps> {
       model: apiKey && modelId ? createGeminiModel(apiKey, modelId) : null,
       submitLimiter: createRateLimiter({ limit: 60, windowMs: hour }),
       deviceLimiter: createRateLimiter({ limit: 10, windowMs: hour }),
+      signInLimiter: createRateLimiter({ limit: 30, windowMs: hour }),
       paypal:
         process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET
           ? createPayPalApi(
