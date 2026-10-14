@@ -43,8 +43,9 @@ const total = (rows: Array<{ cents: number }>) => rows.reduce((sum, r) => sum + 
  * Runs inside the settlement's locked transaction. Gives money back to funders when it sat unclaimed for
  * 90 days, or when it would go to the funder's own PayPal account. Then puts everything held for each
  * maintainer who linked PayPal at least 7 days ago, and is owed at least the payout floor ($1 unless set lower), on one payout line.
+ * With `funderId` (a one-funder run, the demo's "Settle now"), only that funder's money is put on payout lines.
  */
-export async function queuePayouts(tx: Db, settlementId: string, now: Date, floorCents = MIN_PAYOUT_CENTS): Promise<QueueSummary> {
+export async function queuePayouts(tx: Db, settlementId: string, now: Date, floorCents = MIN_PAYOUT_CENTS, funderId?: string): Promise<QueueSummary> {
   const refunded = await takeBackRefunded(tx);
   const unclaimed = await tx
     .update(accruals)
@@ -75,11 +76,12 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date, floo
     )
     .returning({ cents: accruals.cents });
 
+  const fromFunder = funderId ? eq(accruals.funderId, funderId) : undefined;
   const ready = await tx
     .select({ login: maintainers.login, githubId: maintainers.githubId, payerId: maintainers.paypalPayerId, cents: sql<string>`sum(${accruals.cents})` })
     .from(accruals)
     .innerJoin(maintainers, owns("maintainers"))
-    .where(and(eq(accruals.status, "held"), isNotNull(maintainers.paypalPayerId), lte(maintainers.claimedAt, new Date(now.getTime() - FIRST_PAYOUT_HOLD_MS))))
+    .where(and(eq(accruals.status, "held"), isNotNull(maintainers.paypalPayerId), lte(maintainers.claimedAt, new Date(now.getTime() - FIRST_PAYOUT_HOLD_MS)), fromFunder))
     .groupBy(maintainers.login, maintainers.githubId, maintainers.paypalPayerId)
     .having(sql`sum(${accruals.cents}) >= ${floorCents}`)
     .orderBy(maintainers.login);
@@ -93,7 +95,7 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date, floo
     const moved = await tx
       .update(accruals)
       .set({ status: "queued", payoutItemId: line!.id })
-      .where(and(eq(accruals.status, "held"), eq(accruals.githubId, r.githubId!)))
+      .where(and(eq(accruals.status, "held"), eq(accruals.githubId, r.githubId!), fromFunder))
       .returning({ cents: accruals.cents });
     const cents = total(moved);
     await tx.update(payoutItems).set({ cents }).where(eq(payoutItems.id, line!.id));

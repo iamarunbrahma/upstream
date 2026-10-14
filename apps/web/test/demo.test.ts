@@ -4,6 +4,7 @@ import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
 import { receiptItems, receipts, recipientCache } from "../lib/db/schema";
 import { isDemoAccount } from "../lib/demo/accounts";
+import { describeSettleNow } from "../lib/demo/settle-now";
 import { recordFunding } from "../lib/funding/ledger";
 import { FakePayPal } from "../lib/paypal/fake";
 import { createRateLimiter } from "../lib/limits";
@@ -114,9 +115,28 @@ describe("Settle now", () => {
     await approvedReceipt(accountId);
     const res = await press(cookie);
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { summary: string[] }).summary).toEqual([
-      "Settled 1 developer's budget: $10.00 set aside for open-source maintainers.",
+    expect(((await res.json()) as { summary: string[] }).summary).toEqual(["Set aside $10.00 of your budget for open-source maintainers."]);
+  });
+
+  it("describes only the visitor's own budget, never the rest of the server's run", () => {
+    const run = {
+      settlementId: "s-1", expiredReceipts: 3, settledFunders: 1, waitingFunders: 0, setAsideCents: 500,
+      returnedCents: 9999, payoutLines: 1, queuedCents: 120, reconciledLines: 7, uncheckedBatches: 2,
+      sent: [{ settlementId: "s-old", outcome: "needs-check" as const }, { settlementId: "s-1", outcome: "sent" as const }],
+    };
+    expect(describeSettleNow(run)).toEqual([
+      "Set aside $5.00 of your budget for open-source maintainers.",
+      "$1.20 of it is on its way through PayPal Payouts to 1 maintainer who joined Upstream.",
     ]);
+    expect(describeSettleNow({ ...run, settledFunders: 0, waitingFunders: 1, setAsideCents: 0, payoutLines: 0, queuedCents: 0, sent: [] })).toEqual([
+      "GitHub or a package registry is busy, so your budget wasn't settled yet. Please press Settle now again in a minute.",
+    ]);
+    expect(describeSettleNow({ ...run, setAsideCents: 0, payoutLines: 0, queuedCents: 0 })).toEqual([
+      "None of these packages has a maintainer Upstream can pay yet, so your budget stays as it is.",
+    ]);
+    expect(describeSettleNow({ ...run, sent: [{ settlementId: "s-1", outcome: "failed" as const, error: "x" }] })[1]).toBe(
+      "$1.20 of it is ready for 1 maintainer who joined Upstream, but PayPal couldn't take the payout right now. It goes out on the next run.",
+    );
   });
 
   it("says what to do first when there's no money or nothing approved yet", async () => {

@@ -144,6 +144,6 @@ export async function settle(deps: SettleDeps, opts: SettleOptions = {}): Promis
         summary.setAsideCents += cents;
       }
     }
-    return { ...summary, ...(await queuePayouts(tx, run!.id, now, deps.minPayoutCents)) };
+    return { ...summary, ...(await queuePayouts(tx, run!.id, now, deps.minPayoutCents, opts.funderId)) };
   });
 }

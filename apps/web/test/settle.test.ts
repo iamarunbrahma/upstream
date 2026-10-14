@@ -118,6 +118,18 @@ describe("settle", () => {
     expect(await settle(w.deps)).toMatchObject({ settledFunders: 1, setAsideCents: 1000 });
   });
 
+  it("in a one-funder run, puts only that funder's money on payout lines", async () => {
+    const earlier = await w.funder(1000);
+    await w.receipt(earlier, { b: 10_000 });
+    await settle(w.deps);
+    await w.claim("carol", "PAYER-CAROL", 8);
+    const mine = await w.funder(600);
+    await w.receipt(mine, { b: 10_000 });
+    expect(await settle(w.deps, { funderId: mine })).toMatchObject({ payoutLines: 1, queuedCents: 600 });
+    expect(await w.owed(earlier, "held")).toEqual({ carol: 1000 });
+    expect(await settle(w.deps)).toMatchObject({ payoutLines: 1, queuedCents: 1000 });
+  });
+
   it("only spends each funder's own budget", async () => {
     const rich = await w.funder(1000);
     const poor = await w.funder(100);
