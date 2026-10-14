@@ -26,6 +26,9 @@ Upstream on Render, from the `render.yaml` Blueprint at commit 6a82702, then 7a9
 - **Maintainer sign-in:** with the Log in with PayPal return URL saved in the developer dashboard, Arun signed in at `/maintainer` with GitHub as @iamarunbrahma and linked a sandbox PayPal account. The page came back with "PayPal is linked" and "Your first payout can go out from 2026-10-21", the 7-day hold. `/api/maintainer/me` agrees.
 - **CLI against the hosted site:** with the default API URL now the hosted one (caed668), `upstream init` registered a machine and `upstream dashboard` returned a one-time connect link that opened the dashboard page.
 
+- **`upstream-pay` on npm:** after Arun turned on two-factor authentication, `npm publish` was approved with his security key. npm held the new package's first version for a few minutes behind a `0.0.0-stage` placeholder, then released `0.1.0`. A fresh `npx upstream-pay@0.1.0` and a global install both run, point at the hosted site, and `upstream init` prints the right `--plugin-dir`.
+- **The sample session, recorded again (7f35896):** a helper agent built the same link shortener and added `upstream-pay` as a dev dependency. On the hosted site, a new demo account's Run a sample session took 7.6 s and was judged by gemini-2.5-flash-lite: hono 17.9% down to `upstream-pay` 2.1% (tooling). Run on its own, the resolver takes `upstream-pay` from npm to `iamarunbrahma/upstream`, and that repo's FUNDING.yml to @iamarunbrahma (GitHub id 6504730) at 100%.
+
 ## The budget guard
 
 The guard runs every 3 hours in GitHub Actions with the `RENDER_API_KEY` secret.
@@ -43,6 +46,5 @@ The $50 "Hackathon Participant" credit is valid until 1 Oct 2027. Expected spend
 ## Still to check
 
 - From 21 Oct, Settle now pays Arun through Payouts, and the webhook moves the line to "Paid".
-- `upstream-pay` on npm: the publish was refused with 403 until the npm account has two-factor authentication.
 - A real subscription and a real refund arriving through the webhook.
 - `settle-pg.test.ts` against a throwaway Postgres.
