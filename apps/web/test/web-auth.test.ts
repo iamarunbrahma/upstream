@@ -96,6 +96,13 @@ describe("login link to dashboard session", () => {
     expect((await listReceipts(new Request("http://up.test/api/receipts", { headers: sessionHeader }))).status).toBe(200);
   });
 
+  it("lets the browser send this site's origin when Continue is clicked", async () => {
+    // Under "no-referrer" a browser posts the form with `Origin: null`, which the same-site check refuses.
+    const { token } = await createDevice(h.deps.db, null);
+    const page = await connectPage(new Request(await linkFor(token)));
+    expect(page.headers.get("referrer-policy")).toBe("same-origin");
+  });
+
   it("refuses a sign-in posted from another site, and the link still works afterwards", async () => {
     const { token } = await createDevice(h.deps.db, null);
     const url = await linkFor(token);
