@@ -17,8 +17,8 @@ let n = 0;
 beforeEach(async () => {
   w = await settlementWorld();
 });
-const webhook = (type: string, resource: unknown) =>
-  handleWebhook({ db: w.db, paypal: w.paypal, planIds: {}, webhookId: "WH-1" }, new Headers(SIGNED), JSON.stringify({ id: `E-${++n}`, event_type: type, resource }));
+const webhook = (type: string, resource: unknown, id = `E-${++n}`) =>
+  handleWebhook({ db: w.db, paypal: w.paypal, planIds: {}, webhookId: "WH-1" }, new Headers(SIGNED), JSON.stringify({ id, event_type: type, resource }));
 
 /** The shape PayPal's sandbox returned for a capture refund on 14 Oct 2026. */
 const captureRefund = (id: string, captureId: string, value: string, accountId: string) => ({
@@ -79,12 +79,31 @@ describe("refunds and reversals", () => {
     expect(await balanceCents(w.db, f)).toBe(600);
   });
 
-  it("ignore refunds of payments they don't know, and anything that isn't USD", async () => {
+  it("ask PayPal to resend a refund that arrives before its payment is recorded", async () => {
+    const f = await w.funder(0);
+    const early = captureRefund("REF-1", "CAP-LATE", "4.00", f);
+    expect(await webhook("PAYMENT.CAPTURE.REFUNDED", early, "E-EARLY")).toEqual({ status: 503, outcome: "payment not recorded yet" });
+    await topup(f, "CAP-LATE", 1000);
+    expect(await webhook("PAYMENT.CAPTURE.REFUNDED", early, "E-EARLY")).toEqual({ status: 200, outcome: "refund recorded" });
+    expect(await fundedCents(w.db, f)).toBe(600);
+  });
+
+  it("wait for a pending refund to complete, and ignore one that failed", async () => {
     const f = await w.funder(0);
     await topup(f, "CAP-1", 1000);
-    expect((await webhook("PAYMENT.CAPTURE.REFUNDED", captureRefund("REF-1", "CAP-UNKNOWN", "1.00", f))).outcome).toBe("unknown payment");
+    expect(await webhook("PAYMENT.CAPTURE.REFUNDED", { ...captureRefund("REF-1", "CAP-1", "4.00", f), status: "PENDING" })).toEqual({
+      status: 503,
+      outcome: "refund not completed yet",
+    });
+    expect((await webhook("PAYMENT.CAPTURE.REFUNDED", { ...captureRefund("REF-2", "CAP-1", "4.00", f), status: "FAILED" })).outcome).toBe("ignored");
+    expect(await fundedCents(w.db, f)).toBe(1000);
+  });
+
+  it("refuse refund events they can't read, so PayPal shows them as failed deliveries", async () => {
+    const f = await w.funder(0);
+    await topup(f, "CAP-1", 1000);
+    expect(await webhook("PAYMENT.CAPTURE.REFUNDED", { id: "REF-3" })).toEqual({ status: 422, outcome: "refund not understood" });
     expect((await webhook("PAYMENT.CAPTURE.REFUNDED", { ...captureRefund("REF-2", "CAP-1", "1.00", f), amount: { currency_code: "EUR", value: "1.00" } })).outcome).toBe("ignored");
-    expect((await webhook("PAYMENT.CAPTURE.REFUNDED", { id: "REF-3" })).outcome).toBe("ignored");
     expect(await fundedCents(w.db, f)).toBe(1000);
   });
 });

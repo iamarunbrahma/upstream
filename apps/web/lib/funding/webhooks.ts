@@ -4,7 +4,7 @@ import { accounts, fundingEvents, webhookEvents } from "../db/schema";
 import type { PaypalPayoutItem } from "../paypal/api";
 import { PayPalError } from "../paypal/client";
 import { refreshPayoutItem } from "./payout-status";
-import { recordRefund, REFUND_EVENTS } from "./refunds";
+import { recordRefund, REFUND_EVENTS, REFUND_RETRY, REFUND_UNREADABLE } from "./refunds";
 import { reconcileSubscription, type FundingDeps } from "./subscriptions";
 import { creditCaptures } from "./topups";
 
@@ -51,7 +51,9 @@ export async function handleWebhook(deps: WebhookDeps, headers: Headers, rawBody
   if (seen) return { status: 200, outcome: "duplicate" };
   const resource = event.resource && typeof event.resource === "object" ? (event.resource as Record<string, unknown>) : {};
   const outcome = await dispatch(deps, event.event_type, resource);
-  if (outcome === NOT_LISTED) return { status: 503, outcome };
+  // Not stored as handled, so PayPal sends the event again (503) or shows it as a failed delivery (422).
+  if (outcome === NOT_LISTED || REFUND_RETRY.includes(outcome)) return { status: 503, outcome };
+  if (outcome === REFUND_UNREADABLE) return { status: 422, outcome };
   await deps.db.insert(webhookEvents).values({ id: event.id, eventType: event.event_type, outcome }).onConflictDoNothing();
   return { status: 200, outcome };
 }
