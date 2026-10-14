@@ -1,8 +1,7 @@
 import { demoEnabled, isDemoAccount } from "../../../../lib/demo/accounts";
 import { describeSettleNow, settleNowBlocker } from "../../../../lib/demo/settle-now";
-import { runSettlement, settlementDeps } from "../../../../lib/funding/run";
 import { json, withAccount } from "../../../../lib/http";
-import { createGithubGet } from "../../../../lib/resolver/recipients";
+import { settleJob } from "../../../../lib/jobs/run";
 
 export const runtime = "nodejs";
 
@@ -17,8 +16,7 @@ export async function POST(req: Request): Promise<Response> {
     }
     const blocker = await settleNowBlocker(deps.db, accountId);
     if (blocker) return json({ error: blocker }, 409);
-    const run = settlementDeps({ ...deps, paypal: deps.paypal }, createGithubGet(process.env.GITHUB_TOKEN));
-    const report = await runSettlement(run, { funderId: accountId });
+    const report = await settleJob(deps, { funderId: accountId });
     return json(describeSettleNow(report));
   });
 }

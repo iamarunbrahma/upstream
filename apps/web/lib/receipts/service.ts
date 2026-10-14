@@ -2,7 +2,8 @@ import { packageKey, type ReceiptPayload, type ReceiptStatus, type ReceiptView }
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { receiptItems, receipts, type StoredEvidence } from "../db/schema";
-import { judgeReceipt } from "../judge/judge";
+import { judgeWith } from "../jobs/run";
+import type { Workflows } from "../jobs/workflows";
 import type { JudgeModel, JudgeRow } from "../judge/types";
 import { resolveWithCache } from "../resolver/cache";
 import { RateLimitError, type RateLimiter } from "../limits";
@@ -30,6 +31,8 @@ export interface Deps {
   demoSettleLimiter?: RateLimiter;
   /** Cap on AI judging for the demo's sample session, shared by every demo account. */
   demoJudgeLimiter?: RateLimiter;
+  /** Render Workflows, which run the judge, settlements and payout checks; null runs them in this process. */
+  workflows?: Workflows | null;
   /** PayPal REST client; null when the server has no PayPal credentials. */
   paypal?: PayPalApi | null;
   planIds?: Partial<Record<TierKey, string>>;
@@ -97,7 +100,7 @@ export async function submitReceipt(
   if (deps.submitLimiter && !deps.submitLimiter.take(accountId)) throw new RateLimitError();
 
   const rows = await buildRows(deps, payload);
-  const judged = await judgeReceipt(payload.title, rows, deps.model);
+  const judged = await judgeWith(deps, payload.title, rows);
   const rowByKey = new Map(rows.map((r) => [packageKey(r), r]));
   const fields = {
     agent: payload.agent,

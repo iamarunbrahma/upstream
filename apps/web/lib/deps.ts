@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { createPgDb, createPgliteDb } from "./db/client";
 import { migrateDb } from "./db/migrate";
 import { createGeminiModel } from "./judge/gemini";
+import { workflowsFromEnv } from "./jobs/workflows";
 import { createRateLimiter } from "./limits";
 import { createGithubOAuth } from "./maintainers/github-oauth";
 import { createPayPalIdentity } from "./maintainers/paypal-identity";
@@ -50,6 +51,7 @@ export function getDeps(): Promise<Deps> {
             )
           : null,
       planIds: planIdsFromEnv(),
+      workflows: workflowsFromEnv(),
       webhookId: process.env.PAYPAL_WEBHOOK_ID ?? null,
       githubOAuth:
         process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
