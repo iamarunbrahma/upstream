@@ -64,7 +64,7 @@
 - [ ] **Step 1: Install the toolkit alone and check the app still builds**
 
 ```bash
-cd /Users/arunbrahma/Desktop/AltGAN/codepad/hackathons/upstream
+cd <repo root>
 pnpm --filter web add @paypal/agent-toolkit@1.11.0
 ```
 
@@ -1103,12 +1103,12 @@ Expected: `live` for the new commit. Then `curl -s -o /dev/null -w "%{http_code}
 Link a throwaway machine and write a tiny caller for the new API calls (it never prints the token):
 
 ```bash
-S=/private/tmp/claude-501/-Users-arunbrahma-Desktop-AltGAN-codepad/f82c2c00-b184-4c74-b057-c515963e09ec/scratchpad/agentrun
+S=$(mktemp -d)
 rm -rf $S && mkdir -p $S
 UPSTREAM_CONFIG_DIR=$S node packages/cli/plugin/dist/upstream.mjs init --label agent-payments-check
 cat > $S/run.mts <<'EOF'
 import { readFileSync } from "node:fs";
-import { createApi } from "/Users/arunbrahma/Desktop/AltGAN/codepad/hackathons/upstream/packages/cli/src/api.ts";
+import { createApi } from "<repo root>/packages/cli/src/api.ts";
 const cfg = JSON.parse(readFileSync(`${process.argv[2]}/config.json`, "utf8"));
 const api = createApi(cfg.apiUrl, cfg.token);
 const [cmd, arg] = process.argv.slice(3);
