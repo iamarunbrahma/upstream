@@ -13,10 +13,13 @@ envVarGroups:
     envVars:
       - key: NODE_VERSION
         value: "24"
-      # The hosted sandbox demo: "Try the demo" accounts, and payouts at any amount (the real rule is $1).
+      # The hosted sandbox demo: "Try the demo" accounts, payouts at any amount (the real rule is $1), and a
+      # new maintainer's first payout after an hour (the real rule is a week; the site says so).
       - key: DEMO_MODE
         value: "1"
       - key: MIN_PAYOUT_CENTS
+        value: "1"
+      - key: FIRST_PAYOUT_HOLD_HOURS
         value: "1"
       - key: GEMINI_MODEL
         value: gemini-2.5-flash-lite

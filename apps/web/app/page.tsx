@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { demoEnabled } from "@/lib/demo/accounts";
 import { getDeps } from "@/lib/deps";
 import { formatUsd } from "@/lib/format";
+import { firstPayoutHoldMs, holdWords } from "@/lib/funding/payouts";
 import { indexRows, type UsageIndex } from "@/lib/index/usage";
 import usage from "@/lib/index/usage.json" with { type: "json" };
 import { UsageChart } from "./ui/UsageChart";
@@ -27,10 +28,10 @@ const STEPS = [
   { icon: HandCoins, title: "Maintainers get paid", body: "Your budget is split across your receipts and each package's maintainers, to the cent, and paid through PayPal." },
 ];
 
-const SAFEGUARDS = [
+const safeguards = (wait: string) => [
   "No payout ever goes to a developer's own PayPal account.",
   "At most $100 a month from one developer to one maintainer.",
-  "A new maintainer's first payout waits a week.",
+  `A new maintainer's first payout waits ${wait}.`,
   "Money nobody claims in 90 days goes back to the developer's budget.",
   "Money follows the GitHub account, so a renamed or reused username can't redirect it.",
 ];
@@ -143,7 +144,7 @@ export default async function Home() {
           </CardHeader>
           <CardContent>
             <ul className="grid gap-3 text-sm">
-              {SAFEGUARDS.map((s) => (
+              {safeguards(holdWords(firstPayoutHoldMs(process.env.FIRST_PAYOUT_HOLD_HOURS, process.env.PAYPAL_API_BASE))).map((s) => (
                 <li key={s} className="flex gap-3">
                   <CircleCheck className="mt-0.5 size-4 shrink-0 text-primary" />
                   {s}

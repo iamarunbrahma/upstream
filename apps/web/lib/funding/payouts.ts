@@ -2,11 +2,12 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "dri
 import type { Db } from "../db/client";
 import { accruals, fundingEvents, maintainers, payoutItems, settlements, subscriptions } from "../db/schema";
 import type { PayPalApi } from "../paypal/api";
-import { PayPalError } from "../paypal/client";
+import { PayPalError, paypalApiBase, SANDBOX_API } from "../paypal/client";
 import { balanceCents } from "./ledger";
 import { withSettleLock } from "./lock";
 
-const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 /** A maintainer is paid once they're owed at least this much; below it, money carries over (spec section 7). */
 export const MIN_PAYOUT_CENTS = 100;
 
@@ -17,6 +18,23 @@ export function payoutFloorCents(value: string | undefined): number {
 }
 /** Self-dealing control: a new maintainer's first payout waits this long after they link PayPal. */
 export const FIRST_PAYOUT_HOLD_MS = 7 * DAY;
+
+/**
+ * This server's first-payout wait. FIRST_PAYOUT_HOLD_HOURS (whole hours, at least 1, under a week) shortens it, but
+ * only against the PayPal sandbox, where no real money moves (the hosted demo). Anything else keeps a week.
+ */
+export function firstPayoutHoldMs(hours: string | undefined, apiBase: string | undefined): number {
+  const n = Number(hours);
+  const sandbox = paypalApiBase(apiBase).replace(/\/+$/, "") === SANDBOX_API;
+  return sandbox && hours && Number.isInteger(n) && n >= 1 && n * HOUR < FIRST_PAYOUT_HOLD_MS ? n * HOUR : FIRST_PAYOUT_HOLD_MS;
+}
+
+/** The first-payout wait as the site says it: "a week", with the sandbox demo's shorter wait named in brackets. */
+export function holdWords(holdMs: number): string {
+  if (holdMs >= FIRST_PAYOUT_HOLD_MS) return "a week";
+  const h = Math.round(holdMs / HOUR);
+  return `a week (${h === 1 ? "an hour" : `${h} hours`} on this sandbox demo)`;
+}
 /** Money nobody claimed in this long goes back into the funder's budget. */
 export const UNCLAIMED_RETURN_MS = 90 * DAY;
 /**
@@ -44,10 +62,17 @@ const total = (rows: Array<{ cents: number }>) => rows.reduce((sum, r) => sum + 
 /**
  * Runs inside the settlement's locked transaction. Gives money back to funders when it sat unclaimed for
  * 90 days, or when it would go to the funder's own PayPal account. Then puts everything held for each
- * maintainer who linked PayPal at least 7 days ago, and is owed at least the payout floor ($1 unless set lower), on one payout line.
+ * maintainer who linked PayPal at least the first-payout wait ago (a week unless the sandbox demo sets it shorter), and is owed at least the payout floor ($1 unless set lower), on one payout line.
  * With `funderId` (a one-funder run, the demo's "Settle now"), only that funder's money is put on payout lines.
  */
-export async function queuePayouts(tx: Db, settlementId: string, now: Date, floorCents = MIN_PAYOUT_CENTS, funderId?: string): Promise<QueueSummary> {
+export async function queuePayouts(
+  tx: Db,
+  settlementId: string,
+  now: Date,
+  floorCents = MIN_PAYOUT_CENTS,
+  funderId?: string,
+  holdMs = FIRST_PAYOUT_HOLD_MS,
+): Promise<QueueSummary> {
   const refunded = await takeBackRefunded(tx);
   const unclaimed = await tx
     .update(accruals)
@@ -83,7 +108,7 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date, floo
     .select({ login: maintainers.login, githubId: maintainers.githubId, payerId: maintainers.paypalPayerId, cents: sql<string>`sum(${accruals.cents})` })
     .from(accruals)
     .innerJoin(maintainers, owns("maintainers"))
-    .where(and(eq(accruals.status, "held"), isNotNull(maintainers.paypalPayerId), lte(maintainers.claimedAt, new Date(now.getTime() - FIRST_PAYOUT_HOLD_MS)), fromFunder))
+    .where(and(eq(accruals.status, "held"), isNotNull(maintainers.paypalPayerId), lte(maintainers.claimedAt, new Date(now.getTime() - holdMs)), fromFunder))
     .groupBy(maintainers.login, maintainers.githubId, maintainers.paypalPayerId)
     .having(sql`sum(${accruals.cents}) >= ${floorCents}`)
     .orderBy(maintainers.login);

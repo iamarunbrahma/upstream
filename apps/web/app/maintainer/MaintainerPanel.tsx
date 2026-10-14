@@ -118,7 +118,7 @@ export function MaintainerPanel() {
               ? me.paypal.firstPayoutFrom
                 ? `PayPal is linked. Your first payout can go out from ${me.paypal.firstPayoutFrom}.`
                 : "PayPal is linked. Payouts go out with each settlement."
-              : "Link a verified PayPal account so we can pay you. Payouts start a week after you link it."}
+              : `Link a verified PayPal account so we can pay you. Payouts start ${me.paypal.wait} after you link it.`}
           </CardDescription>
           <CardAction>
             {me.paypal.linked ? <Badge>PayPal linked</Badge> : <Badge variant="outline">Not linked yet</Badge>}

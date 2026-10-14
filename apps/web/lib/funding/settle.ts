@@ -23,6 +23,8 @@ export interface SettleDeps {
   now?: () => Date;
   /** Pay a maintainer once they're owed this much; $1 unless the server sets it lower (the sandbox demo). */
   minPayoutCents?: number;
+  /** A new maintainer's first payout waits this long; a week unless the sandbox demo sets it shorter. */
+  firstPayoutHoldMs?: number;
 }
 
 export interface SettleSummary extends QueueSummary {
@@ -144,6 +146,6 @@ export async function settle(deps: SettleDeps, opts: SettleOptions = {}): Promis
         summary.setAsideCents += cents;
       }
     }
-    return { ...summary, ...(await queuePayouts(tx, run!.id, now, deps.minPayoutCents, opts.funderId)) };
+    return { ...summary, ...(await queuePayouts(tx, run!.id, now, deps.minPayoutCents, opts.funderId, deps.firstPayoutHoldMs)) };
   });
 }

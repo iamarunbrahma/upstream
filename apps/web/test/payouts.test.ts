@@ -3,10 +3,12 @@ import type { Db } from "../lib/db/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { accruals, maintainers, payoutItems, settlements } from "../lib/db/schema";
 import { balanceCents } from "../lib/funding/ledger";
-import { FIRST_PAYOUT_HOLD_MS, MIN_PAYOUT_CENTS, payOut, payoutFloorCents, queuePayouts, resolvePayoutCheck, SEND_CLAIM_MS } from "../lib/funding/payouts";
+import { FIRST_PAYOUT_HOLD_MS, firstPayoutHoldMs, holdWords, MIN_PAYOUT_CENTS, payOut, payoutFloorCents, queuePayouts, resolvePayoutCheck, SEND_CLAIM_MS } from "../lib/funding/payouts";
 import { settle } from "../lib/funding/settle";
 import { PayPalError } from "../lib/paypal/client";
 import { DAY, NOW, settlementWorld } from "./settle-fixtures";
+
+const HOUR = DAY / 24;
 
 let w: Awaited<ReturnType<typeof settlementWorld>>;
 beforeEach(async () => {
@@ -267,6 +269,30 @@ describe("payOut", () => {
     expect(await run()).toMatchObject({ payoutLines: 0 });
     w.at(5);
     expect(await run()).toMatchObject({ payoutLines: 1, queuedCents: 1000 });
+  });
+
+  it("on a server with a shorter first-payout wait, like the sandbox demo, pays once that wait is over", async () => {
+    const f = await w.funder(1000);
+    await w.receipt(f, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 0.5 / 24);
+    w.deps.firstPayoutHoldMs = HOUR;
+    expect(await run()).toMatchObject({ payoutLines: 0 });
+    w.at(1 / 24);
+    expect(await run()).toMatchObject({ payoutLines: 1, queuedCents: 1000 });
+  });
+
+  it("shortens the first-payout wait only to whole hours, only on the PayPal sandbox, and never past a week", () => {
+    const sandbox = "https://api-m.sandbox.paypal.com";
+    expect(firstPayoutHoldMs("1", sandbox)).toBe(HOUR);
+    expect(firstPayoutHoldMs("24", undefined)).toBe(24 * HOUR);
+    expect(firstPayoutHoldMs("1", "https://api-m.paypal.com")).toBe(FIRST_PAYOUT_HOLD_MS);
+    for (const bad of [undefined, "", "0", "-1", "1.5", "abc", "168", "1000"]) expect(firstPayoutHoldMs(bad, sandbox)).toBe(FIRST_PAYOUT_HOLD_MS);
+  });
+
+  it("says the first-payout wait plainly, naming the sandbox demo's shorter wait", () => {
+    expect(holdWords(FIRST_PAYOUT_HOLD_MS)).toBe("a week");
+    expect(holdWords(HOUR)).toBe("a week (an hour on this sandbox demo)");
+    expect(holdWords(3 * HOUR)).toBe("a week (3 hours on this sandbox demo)");
   });
 
   it("never pays a funder's money to the funder's own PayPal account", async () => {

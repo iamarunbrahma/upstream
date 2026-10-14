@@ -109,6 +109,21 @@ describe("settlementDeps", () => {
       delete process.env.MIN_PAYOUT_CENTS;
     }
   });
+
+  it("takes the first-payout wait from FIRST_PAYOUT_HOLD_HOURS, on the sandbox only", async () => {
+    const db = createPgliteDb();
+    const make = () => settlementDeps({ db, http: async () => ({ status: 404, body: null }), model: null, paypal: new FakePayPal() } as unknown as Deps & { paypal: FakePayPal }, async () => ({ status: 404, body: null }));
+    expect(make().firstPayoutHoldMs).toBe(7 * 86_400_000);
+    process.env.FIRST_PAYOUT_HOLD_HOURS = "1";
+    try {
+      expect(make().firstPayoutHoldMs).toBe(3_600_000);
+      process.env.PAYPAL_API_BASE = "https://api-m.paypal.com";
+      expect(make().firstPayoutHoldMs).toBe(7 * 86_400_000);
+    } finally {
+      delete process.env.FIRST_PAYOUT_HOLD_HOURS;
+      delete process.env.PAYPAL_API_BASE;
+    }
+  });
 });
 
 describe("POST /api/settle", () => {

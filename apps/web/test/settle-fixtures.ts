@@ -35,6 +35,7 @@ export async function settlementWorld() {
     recipients: async (repo: { owner: string; name: string }) => lookups[`${repo.owner}:${repo.name}`] ?? { source: "none" as const, recipients: [] },
     now: () => clock,
     minPayoutCents: undefined as number | undefined,
+    firstPayoutHoldMs: undefined as number | undefined,
   };
 
   const fund = (accountId: string, cents: number, payerId: string | null = null) =>

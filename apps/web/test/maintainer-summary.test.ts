@@ -56,7 +56,7 @@ describe("maintainerSummary", () => {
     await money();
     expect(await maintainerSummary(db, { login: "alice", githubId: 7 })).toEqual({
       login: "alice",
-      paypal: { linked: false, firstPayoutFrom: null },
+      paypal: { linked: false, firstPayoutFrom: null, wait: "a week" },
       cents: { waiting: 125, onItsWay: 250, paid: 700 },
       months: [
         { month: "2026-10", setAsideCents: 375 },
@@ -72,7 +72,16 @@ describe("maintainerSummary", () => {
 
   it("says when the first payout can go out once PayPal is linked", async () => {
     await linkPayPal(db, 7, { payerId: "P-A", verified: true }, OCT);
-    expect((await maintainerSummary(db, { login: "alice", githubId: 7 })).paypal).toEqual({ linked: true, firstPayoutFrom: "2026-10-21" });
+    expect((await maintainerSummary(db, { login: "alice", githubId: 7 })).paypal).toEqual({ linked: true, firstPayoutFrom: "2026-10-21", wait: "a week" });
+  });
+
+  it("with the sandbox demo's shorter wait, says so, and the first payout can go out the day PayPal is linked", async () => {
+    await linkPayPal(db, 7, { payerId: "P-A", verified: true }, OCT);
+    expect((await maintainerSummary(db, { login: "alice", githubId: 7 }, 3_600_000)).paypal).toEqual({
+      linked: true,
+      firstPayoutFrom: "2026-10-14",
+      wait: "a week (an hour on this sandbox demo)",
+    });
   });
 });
 
@@ -82,5 +91,15 @@ describe("GET /api/maintainer/me", () => {
     const res = await getMine(new Request("http://up.test/api/maintainer/me", { headers: { cookie: `${MAINTAINER_COOKIE}=${session}` } }));
     expect(res.status).toBe(200);
     expect(((await res.json()) as { login: string }).login).toBe("alice");
+  });
+
+  it("uses the server's first-payout wait", async () => {
+    process.env.FIRST_PAYOUT_HOLD_HOURS = "1";
+    try {
+      const res = await getMine(new Request("http://up.test/api/maintainer/me", { headers: { cookie: `${MAINTAINER_COOKIE}=${session}` } }));
+      expect(((await res.json()) as { paypal: { wait: string } }).paypal.wait).toBe("a week (an hour on this sandbox demo)");
+    } finally {
+      delete process.env.FIRST_PAYOUT_HOLD_HOURS;
+    }
   });
 });

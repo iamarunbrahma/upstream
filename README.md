@@ -18,7 +18,7 @@ Upstream turns what an agent actually used into money for the people who maintai
 Safeguards built in:
 - No payout to a funder's own PayPal account.
 - At most $100 a month from one funder to one maintainer.
-- A week's wait before a new maintainer's first payout.
+- A week's wait before a new maintainer's first payout (an hour on the hosted sandbox demo, so you can watch a payout land).
 - Refunds come back out of the budget.
 - Money is tracked by GitHub account, so a renamed or reused username can't redirect it.
 
@@ -70,7 +70,7 @@ node packages/cli/plugin/dist/upstream.mjs dashboard
 ```
 
 Then:
-- **Try the demo flow locally:** add `DEMO_MODE=1` and `MIN_PAYOUT_CENTS=1` to `apps/web/.env.local`, restart, and press **Try the demo**.
+- **Try the demo flow locally:** add `DEMO_MODE=1`, `MIN_PAYOUT_CENTS=1` and `FIRST_PAYOUT_HOLD_HOURS=1` to `apps/web/.env.local`, restart, and press **Try the demo**.
 - **Use it from Claude Code:** start Claude Code with the plugin, `claude --plugin-dir packages/cli/plugin`.
 - **Run the tests:** `pnpm test`.
 - **Run a settlement:** `curl -X POST localhost:3000/api/settle -H "authorization: Bearer $SETTLE_TOKEN"`.
