@@ -20,12 +20,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # pnpm comes from Node's own corepack (the version in package.json), so no third-party action sees the key.
+      - run: corepack enable && pnpm install --frozen-lockfile
       - run: pnpm --filter web render-guard
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
