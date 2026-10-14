@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "Your AI coding agent pays back the open source it builds with.",
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/iamarunbrahma/upstream.git", "directory": "packages/cli" },
+  "homepage": "https://github.com/iamarunbrahma/upstream",
   "type": "module",
   "bin": { "upstream": "./plugin/dist/upstream.mjs" },
   "files": ["plugin"],
