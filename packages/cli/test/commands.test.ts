@@ -10,7 +10,10 @@ const fixturePath = new URL("./fixtures/session.jsonl", import.meta.url).pathnam
 const fakeApi = (submit: Api["submit"]): Api =>
   ({ submit, registerDevice: async () => ({ token: "t", accountId: "a" }), list: async () => ({ receipts: [] }),
      get: async () => ({ receipt: view }), decide: async () => ({ receipt: view }),
-     loginLink: async () => ({ url: "http://up.test/connect?code=x" }) }) as Api;
+     loginLink: async () => ({ url: "http://up.test/connect?code=x" }),
+     addMoney: async (cents: number) => ({ orderId: "O1", approveUrl: "https://www.sandbox.paypal.com/checkoutnow?token=O1", cents }),
+     paymentStatus: async () => ({ status: "waiting", budgetCents: 0 }),
+     me: async () => ({ balanceCents: 0, givenCents: 0, subscription: null }) }) as Api;
 
 function deps(api: Api): CommandDeps & { outs: string[]; logs: string[] } {
   const outs: string[] = [];
