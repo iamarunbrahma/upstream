@@ -9,3 +9,5 @@ coverage/
 *.log
 .DS_Store
 next-env.d.ts
+.superpowers/
+.ruff_cache/
