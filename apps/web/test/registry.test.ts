@@ -76,6 +76,28 @@ describe("resolvePackage (PyPI)", () => {
   });
 });
 
+describe("resolvePackage (PyPI) repo choice", () => {
+  it("takes the repo from a Source or Repository link before any other GitHub link", async () => {
+    const http = fake({
+      "https://pypi.org/pypi/pydantic/json": {
+        status: 200,
+        body: {
+          info: {
+            summary: "Data validation",
+            project_urls: {
+              Funding: "https://github.com/sponsors/samuelcolvin",
+              Changelog: "https://github.com/someone/notes",
+              Homepage: "https://docs.pydantic.dev",
+              Source: "https://github.com/pydantic/pydantic",
+            },
+          },
+        },
+      },
+    });
+    expect((await resolvePackage("pypi", "pydantic", http)).repo).toEqual({ owner: "pydantic", name: "pydantic" });
+  });
+});
+
 describe("resolvePackage failures", () => {
   it("returns found:false for a package no registry knows", async () => {
     const pkg = await resolvePackage("npm", "no-such-pkg-xyz", fake({}));

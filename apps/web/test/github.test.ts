@@ -18,4 +18,10 @@ describe("parseGithubRepo", () => {
     expect(parseGithubRepo("")).toBeNull();
     expect(parseGithubRepo(null)).toBeNull();
   });
+
+  it("rejects GitHub's own pages, such as a Sponsors link, which aren't repos", () => {
+    expect(parseGithubRepo("https://github.com/sponsors/samuelcolvin")).toBeNull();
+    expect(parseGithubRepo("https://github.com/orgs/pydantic/people")).toBeNull();
+    expect(parseGithubRepo("https://github.com/apps/renovate")).toBeNull();
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { accountForToken, bearerToken, createDevice, hashToken, newToken } from "../lib/auth";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
+import { packageCache } from "../lib/db/schema";
 import { CACHE_TTL_MS, resolveWithCache } from "../lib/resolver/cache";
 import type { HttpGetJson } from "../lib/resolver/registry";
 
@@ -48,6 +49,15 @@ describe("resolveWithCache", () => {
     expect(state.calls).toBe(1);
     await resolveWithCache(db, "npm", "zod", http, new Date(t0.getTime() + CACHE_TTL_MS + 1));
     expect(state.calls).toBe(2);
+  });
+
+  it("ignores answers cached by an older version of the lookup", async () => {
+    const db = await freshDb();
+    const stale = { ecosystem: "npm" as const, name: "zod", found: true, description: "old answer", homepage: null, repo: null, docsHosts: [], fundingUrls: [] };
+    await db.insert(packageCache).values({ key: "npm:zod", data: stale, fetchedAt: new Date() });
+    const { http, state } = counting(zod.status, zod.body);
+    expect((await resolveWithCache(db, "npm", "zod", http)).description).toBe("schema validation");
+    expect(state.calls).toBe(1);
   });
 
   it("does not cache server errors and returns not-found meanwhile", async () => {

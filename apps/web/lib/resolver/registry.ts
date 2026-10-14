@@ -90,7 +90,9 @@ async function resolvePypi(name: string, http: HttpGetJson): Promise<ResolvedPac
   const entries = Object.entries(urls).filter((e): e is [string, string] => typeof e[1] === "string");
   const pick = (re: RegExp) => entries.filter(([k]) => re.test(k)).map(([, v]) => v);
   const homepage = strOrNull(info.home_page) ?? pick(/^home/i)[0] ?? null;
-  const repo = entries.map(([, v]) => parseGithubRepo(v)).find((r) => r !== null) ?? null;
+  // A Source or Repository link names the repo; any other GitHub link (a changelog, a Sponsors page) only might.
+  const linked = [...pick(/source|repo|code|github/i), ...entries.filter(([k]) => !/fund|sponsor|donat/i.test(k)).map(([, v]) => v)];
+  const repo = linked.map((v) => parseGithubRepo(v)).find((r) => r !== null) ?? null;
   return {
     ecosystem: "pypi",
     name,
