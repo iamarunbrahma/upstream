@@ -4,6 +4,7 @@ import type { Db } from "../db/client";
 import { accruals, receiptItems, receipts, settlements, type RepoRecipients } from "../db/schema";
 import type { RepoRef } from "../resolver/github";
 import { balanceCents } from "./ledger";
+import { withSettleLock } from "./lock";
 import { queuePayouts, type QueueSummary } from "./payouts";
 import { splitCents } from "./split";
 
@@ -12,8 +13,6 @@ const DAY = 24 * 60 * 60 * 1000;
 export const PROPOSED_EXPIRY_MS = 14 * DAY;
 /** Self-dealing control: one funder sets aside at most this much for one maintainer per calendar month (UTC). */
 export const MONTHLY_CAP_CENTS = 10_000;
-/** Postgres advisory lock that keeps two settlement runs from spending the same budget. */
-const SETTLE_LOCK = 7_340_211;
 
 export interface SettleDeps {
   db: Db;
@@ -114,8 +113,8 @@ async function settleFunder(tx: Db, settlementId: string, funderId: string, foun
 export async function settle(deps: SettleDeps): Promise<SettleSummary> {
   const now = deps.now?.() ?? new Date();
   const found = await lookUpPackages(deps);
-  return deps.db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(${SETTLE_LOCK})`);
+  // The lock keeps two settlement runs from spending the same budget.
+  return withSettleLock(deps.db, async (tx) => {
     const [run] = await tx.insert(settlements).values({ createdAt: now }).returning({ id: settlements.id });
     const expired = await tx
       .update(receipts)
@@ -128,13 +127,13 @@ export async function settle(deps: SettleDeps): Promise<SettleSummary> {
       .where(and(eq(receipts.status, "approved"), isNull(receipts.settlementId)));
     const summary = { settlementId: run!.id, expiredReceipts: expired.length, settledFunders: 0, waitingFunders: 0, setAsideCents: 0 };
     for (const f of funders) {
-      const cents = await settleFunder(tx as unknown as Db, run!.id, f.id, found, now);
+      const cents = await settleFunder(tx, run!.id, f.id, found, now);
       if (cents === null) summary.waitingFunders += 1;
       else {
         summary.settledFunders += 1;
         summary.setAsideCents += cents;
       }
     }
-    return { ...summary, ...(await queuePayouts(tx as unknown as Db, run!.id, now)) };
+    return { ...summary, ...(await queuePayouts(tx, run!.id, now)) };
   });
 }

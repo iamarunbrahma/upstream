@@ -67,9 +67,15 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date): Pro
     .orderBy(maintainers.login);
   let queuedCents = 0;
   for (const r of ready) {
-    const cents = Number(r.cents);
-    const [line] = await tx.insert(payoutItems).values({ settlementId, login: r.login, payerId: r.payerId!, cents, updatedAt: now }).returning({ id: payoutItems.id });
-    await tx.update(accruals).set({ status: "queued", payoutItemId: line!.id }).where(and(eq(accruals.status, "held"), eq(accruals.login, r.login)));
+    const [line] = await tx.insert(payoutItems).values({ settlementId, login: r.login, payerId: r.payerId!, cents: 0, updatedAt: now }).returning({ id: payoutItems.id });
+    // The line pays exactly what this update moved onto it, whatever changed since the sum above.
+    const moved = await tx
+      .update(accruals)
+      .set({ status: "queued", payoutItemId: line!.id })
+      .where(and(eq(accruals.status, "held"), eq(accruals.login, r.login)))
+      .returning({ cents: accruals.cents });
+    const cents = total(moved);
+    await tx.update(payoutItems).set({ cents }).where(eq(payoutItems.id, line!.id));
     queuedCents += cents;
   }
   return { returnedCents: refunded + total(unclaimed) + total(samePerson), payoutLines: ready.length, queuedCents };

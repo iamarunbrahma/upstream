@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import type { Db } from "../lib/db/client";
 import { beforeEach, describe, expect, it } from "vitest";
-import { accruals, settlements } from "../lib/db/schema";
+import { accruals, payoutItems, settlements } from "../lib/db/schema";
 import { balanceCents } from "../lib/funding/ledger";
-import { FIRST_PAYOUT_HOLD_MS, payOut } from "../lib/funding/payouts";
+import { FIRST_PAYOUT_HOLD_MS, payOut, queuePayouts } from "../lib/funding/payouts";
 import { settle } from "../lib/funding/settle";
 import { PayPalError } from "../lib/paypal/client";
 import { DAY, settlementWorld } from "./settle-fixtures";
@@ -16,6 +17,62 @@ const run = async () => {
   return { ...s, sent: await payOut(w.deps) };
 };
 const batches = () => [...w.paypal.payoutBatches.values()];
+
+/** Runs `before` just as the first query that queues money is about to run: the moment another process could act. */
+function interleave(db: Db, before: () => Promise<void>): Db {
+  let fired = false;
+  const runFirst = <T extends object>(q: T): T =>
+    new Proxy(q, {
+      get(target, p) {
+        const v = Reflect.get(target, p) as unknown;
+        if (p === "then") return (res: (x: unknown) => unknown, rej: (e: unknown) => unknown) => before().then(() => (target as unknown as Promise<unknown>).then(res, rej));
+        return typeof v === "function" ? (...args: unknown[]) => runFirst((v as (...a: unknown[]) => object).apply(target, args)) : v;
+      },
+    });
+  return new Proxy(db, {
+    get(target, p) {
+      const v = Reflect.get(target, p) as unknown;
+      if (p !== "update") return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      return (table: unknown) => {
+        const q = target.update(table as typeof accruals);
+        if (table !== accruals) return q;
+        return new Proxy(q, {
+          get(b, bp) {
+            const bv = Reflect.get(b, bp) as unknown;
+            if (bp !== "set") return typeof bv === "function" ? (bv as (...a: unknown[]) => unknown).bind(b) : bv;
+            return (values: { status?: string }) => {
+              const chain = b.set(values as never);
+              if (values.status !== "queued" || fired) return chain;
+              fired = true;
+              return runFirst(chain);
+            };
+          },
+        });
+      };
+    },
+  });
+}
+
+describe("queuePayouts", () => {
+  it("puts exactly the money it moves on a payout line, even if a bounced line frees more at that moment", async () => {
+    const f = await w.funder(1500);
+    await w.claim("carol", "PAYER-CAROL", 8);
+    const [old] = await w.db.insert(settlements).values({}).returning();
+    const [oldLine] = await w.db.insert(payoutItems).values({ settlementId: old!.id, login: "carol", payerId: "PAYER-CAROL", cents: 1000 }).returning();
+    const owedTo = { funderId: f, login: "carol", ecosystem: "npm" as const, name: "b" };
+    await w.db.insert(accruals).values([
+      { ...owedTo, settlementId: old!.id, cents: 1000, status: "queued", payoutItemId: oldLine!.id },
+      { ...owedTo, settlementId: old!.id, cents: 500, status: "held" },
+    ]);
+    const [run] = await w.db.insert(settlements).values({}).returning();
+    // PayPal says the old line came back, and that is applied while this run is queuing.
+    const bounced = () => w.db.update(accruals).set({ status: "held", payoutItemId: null }).where(eq(accruals.payoutItemId, oldLine!.id)).then(() => undefined);
+    await queuePayouts(interleave(w.db, bounced), run!.id, new Date());
+    const [line] = await w.db.select().from(payoutItems).where(eq(payoutItems.settlementId, run!.id));
+    const [linked] = await w.db.select({ total: sql<number>`sum(${accruals.cents})::int` }).from(accruals).where(eq(accruals.payoutItemId, line!.id));
+    expect(line!.cents).toBe(linked!.total);
+  });
+});
 
 describe("payOut", () => {
   it("pays each claimed maintainer on one line, in one PayPal batch named after the settlement", async () => {

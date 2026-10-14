@@ -5,6 +5,7 @@ import { accruals, payoutItems, settlements } from "../db/schema";
 import type { PaypalPayoutItem } from "../paypal/api";
 import { PayPalError } from "../paypal/client";
 import { toCents } from "../paypal/money";
+import { withSettleLock } from "./lock";
 import type { PayoutDeps } from "./payouts";
 
 /** PayPal paid the line. */
@@ -25,11 +26,15 @@ const FINAL = [...PAID, ...RETRY, ...UNDELIVERABLE, ...CAME_BACK];
 export async function applyPayoutItem(db: Db, item: PaypalPayoutItem): Promise<"payout line updated" | "unknown payout line" | "ignored"> {
   const id = z.uuid().safeParse(item.payout_item?.sender_item_id);
   if (!id.success || !item.transaction_status) return "ignored";
+  return withSettleLock(db, (tx) => applyLocked(tx, id.data, item));
+}
+
+async function applyLocked(db: Db, lineId: string, item: PaypalPayoutItem): Promise<"payout line updated" | "unknown payout line"> {
   const [line] = await db
     .select({ id: payoutItems.id, settlementId: payoutItems.settlementId, batchId: settlements.payoutBatchId })
     .from(payoutItems)
     .innerJoin(settlements, eq(settlements.id, payoutItems.settlementId))
-    .where(eq(payoutItems.id, id.data))
+    .where(eq(payoutItems.id, lineId))
     .limit(1);
   if (!line) return "unknown payout line";
   if (item.payout_batch_id && line.batchId && item.payout_batch_id !== line.batchId) return "unknown payout line";
@@ -42,7 +47,7 @@ export async function applyPayoutItem(db: Db, item: PaypalPayoutItem): Promise<"
     .set({ status: item.transaction_status, paypalItemId: item.payout_item_id ?? null, feeCents: fee, updatedAt: new Date() })
     .where(eq(payoutItems.id, line.id));
   const ofLine = (statuses: Array<"queued" | "paid">) => and(eq(accruals.payoutItemId, line.id), inArray(accruals.status, statuses));
-  const status = item.transaction_status;
+  const status = item.transaction_status!;
   if (PAID.includes(status)) {
     await db.update(accruals).set({ status: "paid" }).where(ofLine(["queued"]));
   } else if (RETRY.includes(status)) {
