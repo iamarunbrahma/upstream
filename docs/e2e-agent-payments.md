@@ -30,7 +30,18 @@ Branch `agent-payments` at daf373b, run on a local server (`next dev -p 3100`, `
 - PayPal's button reads "Continue to Review Order", not "Pay", and the page shows the buyer's shipping address. The toolkit's `create_order` sets neither `user_action` nor `shipping_preference`, and doesn't let us set them. The payment still completes; it's cosmetic.
 - The cancel link on PayPal's page is named after the sandbox app ("Return to Test Store").
 
-## Still to do after merging
+## On the hosted site (after merging, 1e06efa)
 
-- Deploy, then repeat one approve and one cancel on the hosted site.
+Render didn't start a deploy on its own after the push (auto-deploy is on, but no deploy appeared), so the web service was deployed by hand with `render deploys create srv-db7q3mdg1s2s73beth1g --commit 1e06efa`. Then, with a machine linked to https://upstream-0s2y.onrender.com:
+
+| Step | Result |
+|---|---|
+| Routes without a token | `POST /api/agent/payments` and `POST /api/agent/payments/:id` answer 401; `GET /api/agent/cancelled` redirects (303) to `/agent/paid?cancelled=1` |
+| `addMoney(500)` | order `3658137255495520A`, in 1 s |
+| Approve in PayPal (sandbox buyer) | back at `/agent/paid`, "Payment approved" |
+| `paymentStatus`, twice | `{"status":"added","addedCents":434,"budgetCents":434}` both times: $5.00 less PayPal's $0.66 fee, credited once |
+| `addMoney(100)`, then "Return to Test Store" | `/agent/paid?cancelled=1`, "You cancelled this payment"; `paymentStatus` -> `cancelled`, budget still 434 |
+
+## Still to do
+
 - Publish `upstream-pay@0.2.0` (needs Arun's security key).
