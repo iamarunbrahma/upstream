@@ -4,7 +4,7 @@ import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
 import type { Deps } from "../lib/receipts/service";
 import {
-  accountForSession, consumeLoginCode, createLoginCode, createSession, LOGIN_CODE_TTL_MS, readCookie, sameOrigin,
+  accountForSession, consumeLoginCode, createLoginCode, createSession, LOGIN_CODE_TTL_MS, peekLoginCode, readCookie, sameOrigin,
   SESSION_COOKIE, SESSION_TTL_MS,
 } from "../lib/web-auth";
 import { fakeRegistry, payload } from "./helpers";
@@ -12,7 +12,7 @@ import { fakeRegistry, payload } from "./helpers";
 const h = vi.hoisted(() => ({ deps: null as unknown as Deps }));
 vi.mock("../lib/deps", () => ({ getDeps: async () => h.deps }));
 const { POST: postLoginLink } = await import("../app/api/login-links/route");
-const { GET: connect } = await import("../app/connect/route");
+const { GET: connectPage, POST: connectPost } = await import("../app/connect/route");
 const { GET: listReceipts, POST: postReceipt } = await import("../app/api/receipts/route");
 
 beforeEach(async () => {
@@ -26,7 +26,9 @@ describe("login codes and sessions", () => {
     const { accountId } = await createDevice(h.deps.db, null);
     const t0 = new Date("2026-10-14T10:00:00Z");
     const code = await createLoginCode(h.deps.db, accountId, t0);
+    expect(await peekLoginCode(h.deps.db, code, t0)).toBe(accountId);
     expect(await consumeLoginCode(h.deps.db, code, t0)).toBe(accountId);
+    expect(await peekLoginCode(h.deps.db, code, t0)).toBeNull();
     expect(await consumeLoginCode(h.deps.db, code, t0)).toBeNull();
     const late = await createLoginCode(h.deps.db, accountId, t0);
     expect(await consumeLoginCode(h.deps.db, late, new Date(t0.getTime() + LOGIN_CODE_TTL_MS + 1))).toBeNull();
@@ -57,20 +59,48 @@ describe("login link to dashboard session", () => {
     expect(res.status).toBe(201);
     return ((await res.json()) as { url: string }).url;
   }
+  const confirm = (url: string, origin = "http://up.test") =>
+    connectPost(
+      new Request("http://up.test/connect", {
+        method: "POST",
+        headers: { origin, host: "up.test", "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code: new URL(url).searchParams.get("code")! }).toString(),
+      }),
+    );
+  async function signIn(token: string): Promise<string> {
+    const res = await confirm(await linkFor(token));
+    return res.headers.get("set-cookie")!.split(";")[0]!;
+  }
 
-  it("turns a CLI link into a session cookie that works once", async () => {
+  it("asks before signing in, so opening someone else's link can't sign you in to their account", async () => {
     const { token } = await createDevice(h.deps.db, null);
     const url = await linkFor(token);
     expect(url).toMatch(/^http:\/\/up\.test\/connect\?code=/);
-    const first = await connect(new Request(url));
+    const page = await connectPage(new Request(url));
+    expect(page.status).toBe(200);
+    expect(page.headers.get("set-cookie")).toBeNull();
+    const html = await page.text();
+    expect(html).toContain('<form method="post" action="/connect">');
+    expect(html).toContain("Only continue if you just ran");
+    expect((await connectPage(new Request(url))).status).toBe(200);
+
+    const first = await confirm(url);
     expect(first.status).toBe(303);
     expect(first.headers.get("location")).toBe("/dashboard");
     const cookie = first.headers.get("set-cookie")!;
     expect(cookie).toMatch(new RegExp(`^${SESSION_COOKIE}=[\\w-]+; HttpOnly; SameSite=Lax; Path=/`));
-    expect((await connect(new Request(url))).status).toBe(400);
+    expect((await confirm(url)).status).toBe(400);
+    expect((await connectPage(new Request(url))).status).toBe(400);
 
     const sessionHeader = { cookie: cookie.split(";")[0]! };
     expect((await listReceipts(new Request("http://up.test/api/receipts", { headers: sessionHeader }))).status).toBe(200);
+  });
+
+  it("refuses a sign-in posted from another site, and the link still works afterwards", async () => {
+    const { token } = await createDevice(h.deps.db, null);
+    const url = await linkFor(token);
+    expect((await confirm(url, "https://evil.example")).status).toBe(403);
+    expect((await confirm(url)).status).toBe(303);
   });
 
   it("refuses a login link without a device token", async () => {
@@ -79,7 +109,7 @@ describe("login link to dashboard session", () => {
 
   it("refuses cookie-authenticated writes from another site", async () => {
     const { token } = await createDevice(h.deps.db, null);
-    const cookie = (await connect(new Request(await linkFor(token)))).headers.get("set-cookie")!.split(";")[0]!;
+    const cookie = await signIn(token);
     const post = (origin: string) =>
       postReceipt(
         new Request("http://up.test/api/receipts", {

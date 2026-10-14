@@ -27,6 +27,16 @@ export async function consumeLoginCode(db: Db, code: string, now: Date = new Dat
   return row?.accountId ?? null;
 }
 
+/** The account a still-usable login code belongs to, without using the code up. */
+export async function peekLoginCode(db: Db, code: string, now: Date = new Date()): Promise<string | null> {
+  const [row] = await db
+    .select({ accountId: loginCodes.accountId })
+    .from(loginCodes)
+    .where(and(eq(loginCodes.codeHash, hashToken(code)), isNull(loginCodes.usedAt), gt(loginCodes.expiresAt, now)))
+    .limit(1);
+  return row?.accountId ?? null;
+}
+
 export async function createSession(db: Db, accountId: string, now: Date = new Date()): Promise<string> {
   const value = secret();
   await db.insert(webSessions).values({ idHash: hashToken(value), accountId, expiresAt: later(now, SESSION_TTL_MS) });
