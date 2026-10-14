@@ -13,7 +13,8 @@
     "paypal:setup": "node --env-file=.env.local --import tsx scripts/paypal-setup.ts",
     "settle": "node --env-file-if-exists=.env.local --import tsx jobs/settle.ts",
     "claim-maintainer": "node --env-file-if-exists=.env.local --import tsx scripts/claim-maintainer.ts",
-    "resolve-payout-check": "node --env-file-if-exists=.env.local --import tsx scripts/resolve-payout-check.ts"
+    "resolve-payout-check": "node --env-file-if-exists=.env.local --import tsx scripts/resolve-payout-check.ts",
+    "usage-index": "node --import tsx scripts/usage-index.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.9",

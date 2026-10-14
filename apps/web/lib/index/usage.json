@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-10-14",
+  "sessions": 15,
+  "packages": [
+    {
+      "ecosystem": "npm",
+      "name": "react",
+      "sessions": 9,
+      "shareBp": 1260
+    },
+    {
+      "ecosystem": "npm",
+      "name": "next",
+      "sessions": 7,
+      "shareBp": 1141
+    },
+    {
+      "ecosystem": "npm",
+      "name": "vitest",
+      "sessions": 3,
+      "shareBp": 321
+    },
+    {
+      "ecosystem": "npm",
+      "name": "drizzle-orm",
+      "sessions": 3,
+      "shareBp": 286
+    },
+    {
+      "ecosystem": "npm",
+      "name": "zod",
+      "sessions": 4,
+      "shareBp": 191
+    }
+  ]
+}
