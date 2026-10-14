@@ -6,3 +6,4 @@ export * from "./imports";
 export * from "./manifests";
 export * from "./build";
 export { isNodeBuiltin, isPythonStdlib } from "./stdlib";
+export * from "./api";
