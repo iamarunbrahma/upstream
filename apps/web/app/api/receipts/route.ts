@@ -1,6 +1,7 @@
 import { ReceiptPayload } from "@upstream/core";
 import { z } from "zod";
 import { json, withAccount } from "../../../lib/http";
+import { RateLimitError } from "../../../lib/limits";
 import { listReceipts, submitReceipt } from "../../../lib/receipts/service";
 
 export const runtime = "nodejs";
@@ -9,8 +10,13 @@ export async function POST(req: Request): Promise<Response> {
   return withAccount(req, async (deps, accountId) => {
     const parsed = ReceiptPayload.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return json({ error: "invalid receipt", issues: parsed.error.issues.slice(0, 5) }, 400);
-    const { view, changed } = await submitReceipt(deps, accountId, parsed.data);
-    return json({ receipt: view, changed });
+    try {
+      const { view, changed } = await submitReceipt(deps, accountId, parsed.data);
+      return json({ receipt: view, changed });
+    } catch (e) {
+      if (e instanceof RateLimitError) return json({ error: e.message }, 429);
+      throw e;
+    }
   });
 }
 

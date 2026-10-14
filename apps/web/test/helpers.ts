@@ -1,8 +1,8 @@
-import { hostKey, type PackageEvidence, type ReceiptPayload } from "@upstream/core";
+import type { PackageEvidence, ReceiptPayload } from "@upstream/core";
 import type { HttpGetJson } from "../lib/resolver/registry";
 
 export const ev = (name: string, over: Partial<PackageEvidence> = {}): PackageEvidence => ({
-  ecosystem: "pypi", name, installed: false, manifestAdded: false, importFiles: 1, usageLines: 1, kind: "dependency", ...over,
+  ecosystem: "pypi", name, installed: false, manifestAdded: false, importFiles: 1, usageLines: 1, docsReads: 0, kind: "dependency", ...over,
 });
 
 export const payload = (over: Partial<ReceiptPayload> = {}): ReceiptPayload => ({
@@ -10,8 +10,7 @@ export const payload = (over: Partial<ReceiptPayload> = {}): ReceiptPayload => (
   agent: "claude-code",
   title: "Build a todo API",
   endedAt: "2026-10-14T10:00:00.000Z",
-  docsHostKeys: { [hostKey("fastapi.tiangolo.com")]: 2 },
-  packages: [ev("fastapi", { installed: true, importFiles: 2, usageLines: 9 }), ev("pydantic")],
+  packages: [ev("fastapi", { installed: true, importFiles: 2, usageLines: 9, docsReads: 2 }), ev("pydantic")],
   ...over,
 });
 

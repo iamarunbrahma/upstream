@@ -28,7 +28,6 @@ export function evidenceFromTranscript(transcriptPath: string, jsonl: string, cw
     title: t.title,
     endedAt: now.toISOString(),
     packages: built.packages,
-    docsHostKeys: built.docsHostKeys,
   };
 }
 
@@ -70,6 +69,5 @@ export function evidenceFromGitDiff(range: string, cwd: string, now: Date = new 
     title: null,
     endedAt: now.toISOString(),
     packages: built.packages,
-    docsHostKeys: built.docsHostKeys,
   };
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
+import { createRateLimiter } from "../lib/limits";
 import type { Deps } from "../lib/receipts/service";
 import { fakeRegistry, payload } from "./helpers";
 
@@ -66,6 +67,16 @@ describe("API routes", () => {
     const { receipt } = (await (await postReceipt(req("/api/receipts", { method: "POST", token: owner, body: payload() }))).json()) as { receipt: { id: string } };
     expect((await getOne(req(`/api/receipts/${receipt.id}`, { token: other }), params(receipt.id))).status).toBe(404);
     expect((await getOne(req("/api/receipts/not-a-uuid", { token: owner }), params("not-a-uuid"))).status).toBe(404);
+  });
+
+  it("limits device sign-ups per client and receipts per account", async () => {
+    h.deps = { ...h.deps, deviceLimiter: createRateLimiter({ limit: 2, windowMs: 60_000 }), submitLimiter: createRateLimiter({ limit: 1, windowMs: 60_000 }) };
+    const signup = () => postDevice(new Request("http://test/api/devices", { method: "POST", headers: { "x-forwarded-for": "203.0.113.9" }, body: "{}" }));
+    expect((await signup()).status).toBe(201);
+    const token = ((await (await signup()).json()) as { token: string }).token;
+    expect((await signup()).status).toBe(429);
+    expect((await postReceipt(req("/api/receipts", { method: "POST", token, body: payload({ sessionId: "x" }) }))).status).toBe(200);
+    expect((await postReceipt(req("/api/receipts", { method: "POST", token, body: payload({ sessionId: "y" }) }))).status).toBe(429);
   });
 
   it("rejects an unknown decision action", async () => {

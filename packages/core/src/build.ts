@@ -1,4 +1,4 @@
-import { hostKey, type Ecosystem, type PackageEvidence } from "./evidence";
+import { isValidPackageName, LIMITS, type Ecosystem, type PackageEvidence } from "./evidence";
 import { countUsageLines, findImports, languageOf, type ImportHit } from "./imports";
 import { parseInstallCommands, type InstallHit } from "./installs";
 import { manifestAdditions, manifestType } from "./manifests";
@@ -29,8 +29,6 @@ export interface EvidenceInput {
 
 export interface BuiltEvidence {
   packages: PackageEvidence[];
-  /** hostKey(host) -> pages read. */
-  docsHostKeys: Record<string, number>;
 }
 
 export function emptyDisk(): DiskManifests {
@@ -89,8 +87,9 @@ function kindOf(a: Acc, disk: DiskManifests): PackageEvidence["kind"] {
   return "unknown";
 }
 
-function docsHostKeyCounts(urls: string[]): Record<string, number> {
-  const out: Record<string, number> = {};
+/** Hostnames of the docs pages the agent fetched. Used only on this machine, never sent. */
+function docsHosts(urls: string[]): string[] {
+  const out: string[] = [];
   for (const u of urls) {
     let host: string;
     try {
@@ -99,11 +98,26 @@ function docsHostKeyCounts(urls: string[]): Record<string, number> {
       continue;
     }
     if (host === "localhost" || /^[\d.]+$/.test(host) || host.includes(":") || host.startsWith("[") || host.endsWith(".local")) continue;
-    const key = hostKey(host);
-    if (!(key in out) && Object.keys(out).length >= 100) continue;
-    out[key] = (out[key] ?? 0) + 1;
+    out.push(host);
   }
   return out;
+}
+
+// Name parts too common to tie a docs site to one package ("@types/node" must not claim nodejs.org).
+const GENERIC_NAME_PARTS = new Set([
+  "api", "app", "cli", "client", "common", "core", "dev", "doc", "docs", "js", "kit", "lib", "node", "plugin",
+  "plugins", "py", "python", "sdk", "server", "tool", "tools", "ts", "type", "types", "util", "utils", "web",
+]);
+
+/** How many of `hosts` look like docs for `name`: the host contains a distinctive part of the package name. */
+export function docsReadsFor(name: string, hosts: string[]): number {
+  const parts = name
+    .replace(/^@/, "")
+    .toLowerCase()
+    .split(/[/._-]+/)
+    .filter((t) => t.length >= 3 && !GENERIC_NAME_PARTS.has(t));
+  if (parts.length === 0) return 0;
+  return hosts.filter((h) => parts.some((t) => h.includes(t))).length;
 }
 
 /** Combines file changes, installs and docs reads into per-package evidence. Pure. */
@@ -162,6 +176,7 @@ export function buildEvidence(input: EvidenceInput): BuiltEvidence {
     else if (a.dev === null) a.dev = false;
   }
 
+  const hosts = docsHosts(input.docsUrls);
   const declared = (a: Acc) =>
     a.ecosystem === "npm" ? input.disk.npmDeps.has(a.name) || input.disk.npmDevDeps.has(a.name) : input.disk.pypiDeps.has(a.name);
   const packages = [...acc.values()]
@@ -169,18 +184,20 @@ export function buildEvidence(input: EvidenceInput): BuiltEvidence {
     // An import alone can be a first-party module ("app.routers") or a path alias ("lib/db"). Only credit, and only
     // ever send, packages that an install, a manifest edit or the on-disk manifest backs.
     .filter((a) => a.installed || a.manifestAdded || declared(a))
+    .filter((a) => isValidPackageName(a.ecosystem, a.name))
     .sort((x, y) => y.importFiles.size - x.importFiles.size || y.usageLines - x.usageLines)
-    .slice(0, 200)
+    .slice(0, LIMITS.packages)
     .map<PackageEvidence>((a) => ({
       ecosystem: a.ecosystem,
       name: a.name,
       installed: a.installed,
       manifestAdded: a.manifestAdded,
-      importFiles: a.importFiles.size,
-      usageLines: a.usageLines,
+      importFiles: Math.min(a.importFiles.size, LIMITS.importFiles),
+      usageLines: Math.min(a.usageLines, LIMITS.usageLines),
+      docsReads: Math.min(docsReadsFor(a.name, hosts), LIMITS.docsReads),
       kind: kindOf(a, input.disk),
     }))
     .sort((x, y) => (x.ecosystem + ":" + x.name).localeCompare(y.ecosystem + ":" + y.name));
 
-  return { packages, docsHostKeys: docsHostKeyCounts(input.docsUrls) };
+  return { packages };
 }

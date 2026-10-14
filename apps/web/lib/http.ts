@@ -2,6 +2,11 @@ import { accountForToken, bearerToken } from "./auth";
 import { getDeps } from "./deps";
 import type { Deps } from "./receipts/service";
 
+/** The caller's address as seen through the hosting proxy, for per-client limits. */
+export function clientKey(req: Request): string {
+  return (req.headers.get("x-forwarded-for") ?? "").split(",")[0]!.trim() || "unknown";
+}
+
 export function json(data: unknown, status = 200): Response {
   return Response.json(data, { status });
 }

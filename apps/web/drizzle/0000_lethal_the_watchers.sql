@@ -41,7 +41,7 @@ CREATE TABLE "receipts" (
 	"model_id" text,
 	"prompt_version" text NOT NULL,
 	"raw" text,
-	"docs_host_keys" jsonb NOT NULL,
+	"judge_count" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"decided_at" timestamp with time zone

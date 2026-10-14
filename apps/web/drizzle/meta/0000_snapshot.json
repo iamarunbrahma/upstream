@@ -1,5 +1,5 @@
 {
-  "id": "d5693d21-bf10-4215-bb29-eb5772da26ff",
+  "id": "4bb9d293-0149-4322-9f85-347922847e5c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -293,11 +293,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "docs_host_keys": {
-          "name": "docs_host_keys",
-          "type": "jsonb",
+        "judge_count": {
+          "name": "judge_count",
+          "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

@@ -1,10 +1,11 @@
-import { hostKey, packageKey, type ReceiptPayload, type ReceiptStatus, type ReceiptView } from "@upstream/core";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { packageKey, type ReceiptPayload, type ReceiptStatus, type ReceiptView } from "@upstream/core";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { receiptItems, receipts, type StoredEvidence } from "../db/schema";
 import { judgeReceipt } from "../judge/judge";
 import type { JudgeModel, JudgeRow } from "../judge/types";
 import { resolveWithCache } from "../resolver/cache";
+import { RateLimitError, type RateLimiter } from "../limits";
 import type { HttpGetJson } from "../resolver/registry";
 import { toView } from "./view";
 
@@ -12,7 +13,14 @@ export interface Deps {
   db: Db;
   http: HttpGetJson;
   model: JudgeModel | null;
+  /** Per-account cap on submissions that trigger judging. */
+  submitLimiter?: RateLimiter;
+  /** Per-client cap on device sign-ups. */
+  deviceLimiter?: RateLimiter;
 }
+
+/** A session's receipt is re-judged at most this many times, so re-submitting can't burn model quota. */
+export const MAX_JUDGES_PER_SESSION = 10;
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -36,7 +44,7 @@ async function loadView(db: Db, accountId: string, id: string): Promise<ReceiptV
 
 async function findBySession(db: Db, accountId: string, sessionId: string) {
   const [row] = await db
-    .select({ id: receipts.id, status: receipts.status })
+    .select({ id: receipts.id, status: receipts.status, judgeCount: receipts.judgeCount })
     .from(receipts)
     .where(and(eq(receipts.accountId, accountId), eq(receipts.sessionId, sessionId)))
     .limit(1);
@@ -47,8 +55,7 @@ async function buildRows(deps: Deps, payload: ReceiptPayload): Promise<JudgeRow[
   const resolved = await mapLimit(payload.packages, 6, (p) => resolveWithCache(deps.db, p.ecosystem, p.name, deps.http));
   return payload.packages.map((p, i) => {
     const meta = resolved[i]!;
-    const docsReads = meta.docsHosts.reduce((sum, host) => sum + (payload.docsHostKeys[hostKey(host)] ?? 0), 0);
-    return { ...p, description: meta.description, docsReads };
+    return { ...p, description: meta.description };
   });
 }
 
@@ -62,9 +69,10 @@ export async function submitReceipt(
   payload: ReceiptPayload,
 ): Promise<{ view: ReceiptView; changed: boolean }> {
   const existing = await findBySession(deps.db, accountId, payload.sessionId);
-  if (existing && existing.status !== "proposed") {
+  if (existing && (existing.status !== "proposed" || existing.judgeCount >= MAX_JUDGES_PER_SESSION)) {
     return { view: (await loadView(deps.db, accountId, existing.id))!, changed: false };
   }
+  if (deps.submitLimiter && !deps.submitLimiter.take(accountId)) throw new RateLimitError();
 
   const rows = await buildRows(deps, payload);
   const judged = await judgeReceipt(payload.title, rows, deps.model);
@@ -77,7 +85,6 @@ export async function submitReceipt(
     modelId: judged.modelId,
     promptVersion: judged.promptVersion,
     raw: judged.raw,
-    docsHostKeys: payload.docsHostKeys,
     updatedAt: new Date(),
   };
 
@@ -85,11 +92,11 @@ export async function submitReceipt(
     // setWhere keeps a receipt decided by a concurrent request frozen: no row comes back in that case.
     const [row] = await tx
       .insert(receipts)
-      .values({ accountId, sessionId: payload.sessionId, ...fields })
+      .values({ accountId, sessionId: payload.sessionId, ...fields, judgeCount: 1 })
       .onConflictDoUpdate({
         target: [receipts.accountId, receipts.sessionId],
-        set: fields,
-        setWhere: eq(receipts.status, "proposed"),
+        set: { ...fields, judgeCount: sql`${receipts.judgeCount} + 1` },
+        setWhere: and(eq(receipts.status, "proposed"), lt(receipts.judgeCount, MAX_JUDGES_PER_SESSION)),
       })
       .returning({ id: receipts.id });
     if (!row) return null;

@@ -31,7 +31,7 @@ export const receipts = pgTable(
     modelId: text("model_id"),
     promptVersion: text("prompt_version").notNull(),
     raw: text("raw"),
-    docsHostKeys: jsonb("docs_host_keys").$type<Record<string, number>>().notNull(),
+    judgeCount: integer("judge_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),

@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { createPgDb, createPgliteDb } from "./db/client";
 import { migrateDb } from "./db/migrate";
 import { createGeminiModel } from "./judge/gemini";
+import { createRateLimiter } from "./limits";
 import type { Deps } from "./receipts/service";
 import { fetchJson } from "./resolver/registry";
 
@@ -22,7 +23,14 @@ export function getDeps(): Promise<Deps> {
     }
     const apiKey = process.env.GEMINI_API_KEY;
     const modelId = process.env.GEMINI_MODEL;
-    return { db, http: fetchJson, model: apiKey && modelId ? createGeminiModel(apiKey, modelId) : null };
+    const hour = 60 * 60 * 1000;
+    return {
+      db,
+      http: fetchJson,
+      model: apiKey && modelId ? createGeminiModel(apiKey, modelId) : null,
+      submitLimiter: createRateLimiter({ limit: 60, windowMs: hour }),
+      deviceLimiter: createRateLimiter({ limit: 10, windowMs: hour }),
+    };
   })();
   return depsPromise;
 }

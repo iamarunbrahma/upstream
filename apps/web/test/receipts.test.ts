@@ -5,6 +5,7 @@ import { migrateDb } from "../lib/db/migrate";
 import type { JudgeModel } from "../lib/judge/types";
 import { decideReceipt, getReceipt, listReceipts, submitReceipt, type Deps } from "../lib/receipts/service";
 import { formatPercent } from "../lib/receipts/view";
+import { createRateLimiter, RateLimitError } from "../lib/limits";
 import { ev, fakeRegistry, payload } from "./helpers";
 
 let deps: Deps;
@@ -18,7 +19,7 @@ beforeEach(async () => {
 });
 
 describe("submitReceipt", () => {
-  it("stores a receipt summing to 10000 bp, matching docs reads to the package's docs host", async () => {
+  it("stores a receipt summing to 10000 bp, keeping the docs-read count counted on the device", async () => {
     const { view, changed } = await submitReceipt(deps, account, payload());
     expect(changed).toBe(true);
     expect(view.status).toBe("proposed");
@@ -89,6 +90,32 @@ describe("decide, get and list", () => {
     await decideReceipt(deps, account, a.view.id, "approve");
     expect((await listReceipts(deps, account, "proposed")).map((r) => r.sessionId)).toEqual(["b"]);
     expect(await listReceipts(deps, account)).toHaveLength(2);
+  });
+});
+
+describe("abuse limits", () => {
+  it("re-judges a proposed session at most 10 times, then keeps the last receipt", async () => {
+    let calls = 0;
+    const model: JudgeModel = { id: "m", generate: async () => (calls++, JSON.stringify({ packages: [] })) };
+    for (let i = 0; i < 12; i++) await submitReceipt({ ...deps, model }, account, payload());
+    expect(calls).toBe(10);
+  });
+
+  it("refuses an account's submissions beyond its hourly limit", async () => {
+    const limited = { ...deps, submitLimiter: createRateLimiter({ limit: 2, windowMs: 60_000 }) };
+    await submitReceipt(limited, account, payload({ sessionId: "a" }));
+    await submitReceipt(limited, account, payload({ sessionId: "b" }));
+    await expect(submitReceipt(limited, account, payload({ sessionId: "c" }))).rejects.toBeInstanceOf(RateLimitError);
+  });
+
+  it("counts limiter hits per key inside the window only", () => {
+    let t = 0;
+    const lim = createRateLimiter({ limit: 1, windowMs: 1000, now: () => t });
+    expect(lim.take("a")).toBe(true);
+    expect(lim.take("a")).toBe(false);
+    expect(lim.take("b")).toBe(true);
+    t = 1001;
+    expect(lim.take("a")).toBe(true);
   });
 });
 

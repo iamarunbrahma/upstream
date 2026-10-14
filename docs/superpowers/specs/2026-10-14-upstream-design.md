@@ -79,10 +79,10 @@ Input is the session transcript (`transcript_path` from the hook input) plus the
 | `manifestAdded` | Diff of `package.json`, `requirements*.txt` or `pyproject.toml` |
 | `importFiles` | Files the agent wrote or edited (Write `content`, Edit `new_string`) that import the package |
 | `usageLines` | Lines in agent-written code that reference the imported name (regex, JS/TS and Python) |
-| `docsReads` | WebFetch / WebSearch URLs whose host matches the package's homepage or docs domain |
+| `docsReads` | WebFetch URLs whose host contains a distinctive part of the package name (`pytorch.org` for torch, `orm.drizzle.team` for drizzle-orm). Counted on the machine. Only the number is sent, never a URL, hostname or hash of one. |
 | `kind` | `dependency` or `devDependency` (from the manifest) |
 
-**Excluded:** standard-library modules, workspace and local packages, and packages with no public repo. Transitive dependencies are out of v1 (see section 11).
+**Excluded:** standard-library modules, workspace and local packages, and any import that no install, manifest edit or on-disk manifest backs. That last rule keeps first-party modules (`from app.routers import ...`) and path aliases (`lib/db`) on the machine. Names must match npm or PyPI naming rules. Transitive dependencies are out of v1 (see section 11).
 
 **Task summary:** the session's `ai-title` entry. If there isn't one, nothing is sent. The user's prompts are never sent. `upstream receipt --dry-run` prints the exact payload before anything leaves the machine.
 
@@ -186,6 +186,15 @@ Judges won't have Claude Code, a Gemini key or PayPal credentials, so the hosted
 - **PayPal:** OAuth token cached until 60 s before expiry. Every POST sends a `PayPal-Request-Id`, so retries are safe. A batch with mixed results is handled per item.
 - **Gemini:** the retry and fallback in section 5.
 - **GitHub:** an authenticated token, resolver results cached, and a 403 rate-limit response turns into a "resolving later" state rather than an error.
+- **Abuse limits (built in Plan 1):**
+  - At most 60 packages per receipt, with upper limits on every count.
+  - A session is re-judged at most 10 times.
+  - 60 judged submissions per account per hour.
+  - 10 device sign-ups per client per hour.
+- **Trust in evidence:** evidence is computed on the client, so a modified CLI can inflate it. The judge can raise a package to at most 2x the share its evidence supports, so text a package author controls (such as a registry description) can't take over a receipt. A funder can still steer their *own* budget toward a package they maintain. Plan 2 must therefore add payout-side controls:
+  - Self-dealing check: no payouts from a funder to a maintainer with the same verified identity.
+  - A per-funder, per-maintainer monthly cap.
+  - A hold before the first payout to a new maintainer.
 - **Tests (vitest):**
   - the evidence extractor on fixture transcripts and diffs
   - judge guardrails and the fallback
