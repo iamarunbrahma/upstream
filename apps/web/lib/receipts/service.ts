@@ -6,6 +6,8 @@ import { judgeReceipt } from "../judge/judge";
 import type { JudgeModel, JudgeRow } from "../judge/types";
 import { resolveWithCache } from "../resolver/cache";
 import { RateLimitError, type RateLimiter } from "../limits";
+import type { PayPalApi } from "../paypal/api";
+import type { TierKey } from "../paypal/plans";
 import type { HttpGetJson } from "../resolver/registry";
 import { toView } from "./view";
 
@@ -17,6 +19,11 @@ export interface Deps {
   submitLimiter?: RateLimiter;
   /** Per-client cap on device sign-ups. */
   deviceLimiter?: RateLimiter;
+  /** PayPal REST client; null when the server has no PayPal credentials. */
+  paypal?: PayPalApi | null;
+  planIds?: Partial<Record<TierKey, string>>;
+  /** The id PayPal gave our webhook, needed to verify webhook signatures. */
+  webhookId?: string | null;
 }
 
 /** A session's receipt is re-judged at most this many times, so re-submitting can't burn model quota. */

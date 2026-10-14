@@ -3,6 +3,9 @@ import { createPgDb, createPgliteDb } from "./db/client";
 import { migrateDb } from "./db/migrate";
 import { createGeminiModel } from "./judge/gemini";
 import { createRateLimiter } from "./limits";
+import { createPayPalApi } from "./paypal/api";
+import { createPayPalHttp, SANDBOX_API } from "./paypal/client";
+import { planIdsFromEnv } from "./paypal/plans";
 import type { Deps } from "./receipts/service";
 import { fetchJson } from "./resolver/registry";
 
@@ -30,6 +33,18 @@ export function getDeps(): Promise<Deps> {
       model: apiKey && modelId ? createGeminiModel(apiKey, modelId) : null,
       submitLimiter: createRateLimiter({ limit: 60, windowMs: hour }),
       deviceLimiter: createRateLimiter({ limit: 10, windowMs: hour }),
+      paypal:
+        process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET
+          ? createPayPalApi(
+              createPayPalHttp({
+                clientId: process.env.PAYPAL_CLIENT_ID,
+                clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+                baseUrl: process.env.PAYPAL_API_BASE ?? SANDBOX_API,
+              }),
+            )
+          : null,
+      planIds: planIdsFromEnv(),
+      webhookId: process.env.PAYPAL_WEBHOOK_ID ?? null,
     };
   })();
   return depsPromise;
