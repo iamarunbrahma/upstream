@@ -14,7 +14,9 @@ export interface AgentPaymentStart {
   approveUrl: string;
   cents: number;
 }
-export type AgentPaymentResult = { status: "added"; addedCents: number; budgetCents: number } | { status: "waiting" | "cancelled"; budgetCents: number };
+export type AgentPaymentResult =
+  | { status: "added"; addedCents: number; budgetCents: number }
+  | { status: "waiting" | "processing" | "cancelled"; budgetCents: number };
 export interface BudgetView {
   balanceCents: number;
   givenCents: number;

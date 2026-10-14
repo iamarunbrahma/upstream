@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Api } from "../src/api";
-import { addMoneyTool, approveTool, budgetTool, paymentStatusTool, receiptTool } from "../src/mcp";
+import { ADD_MONEY_DESCRIPTION, addMoneyTool, approveTool, budgetTool, paymentStatusTool, receiptTool } from "../src/mcp";
 import { view } from "./helpers";
 
 const fixturePath = new URL("./fixtures/session.jsonl", import.meta.url).pathname;
@@ -41,6 +41,7 @@ describe("paying from the agent", () => {
     "ORDER-1": { status: "waiting", budgetCents: 434 },
     "ORDER-2": { status: "added", addedCents: 916, budgetCents: 1350 },
     "ORDER-3": { status: "cancelled", budgetCents: 434 },
+    "ORDER-4": { status: "processing", budgetCents: 434 },
   };
   const payApi = {
     addMoney: async (cents: number) => {
@@ -79,5 +80,13 @@ describe("paying from the agent", () => {
     expect((await budgetTool({ api: payApi })).content[0]!.text).toBe(
       "Your Upstream budget: $13.50. Set aside for maintainers so far: $1.20. You give $5 a month.",
     );
+  });
+
+  it("says when PayPal is still processing, and tells the agent never to approve the payment itself", async () => {
+    expect((await paymentStatusTool({ api: payApi }, { orderId: "ORDER-4" })).content[0]!.text).toBe(
+      "PayPal is still processing this payment. Ask me to check again in a few minutes.",
+    );
+    expect(ADD_MONEY_DESCRIPTION).toContain("Never open the link or approve the payment yourself");
+    expect(ADD_MONEY_DESCRIPTION).toContain("never start another payment while one is waiting");
   });
 });

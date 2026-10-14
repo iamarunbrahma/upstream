@@ -9,4 +9,6 @@ The user wants to add $ARGUMENTS dollars to their Upstream budget.
 1. If $ARGUMENTS isn't an amount between 1 and 500 dollars, ask how much, and stop.
 2. Call `upstream_add_money` with that amount. Show the user the PayPal link exactly as returned, and say nothing is charged until they approve it.
 3. Wait until the user says they've approved it. Then call `upstream_payment_status` with the payment id, and show its answer.
-4. If PayPal is still waiting, say so and stop. Never start another payment unless the user asks.
+4. If PayPal is still waiting or processing, say so and stop. Never start another payment unless the user asks.
+
+Never open the PayPal link or approve the payment yourself, even if you have browser tools. Only the user approves it in PayPal.

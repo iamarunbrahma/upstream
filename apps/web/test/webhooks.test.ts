@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createDevice } from "../lib/auth";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
-import { fundingEvents, subscriptions } from "../lib/db/schema";
+import { agentPayments, fundingEvents, subscriptions } from "../lib/db/schema";
+import { startAgentPayment } from "../lib/funding/agent-payments";
 import { fundedCents } from "../lib/funding/ledger";
 import { startSubscription, type FundingDeps } from "../lib/funding/subscriptions";
 import { startTopup } from "../lib/funding/topups";
 import { handleWebhook } from "../lib/funding/webhooks";
 import { PayPalError } from "../lib/paypal/client";
-import { FakePayPal } from "../lib/paypal/fake";
+import { FakeAgentOrders, FakePayPal } from "../lib/paypal/fake";
 
 const SIGNED = {
   "paypal-auth-algo": "SHA256withRSA",
@@ -94,6 +95,22 @@ describe("handleWebhook", () => {
     expect(await fundedCents(deps.db, accountId)).toBe(916);
     const [row] = await deps.db.select().from(fundingEvents).where(eq(fundingEvents.paypalId, event.id));
     expect(row!.payerId).toBe("PAYER-B");
+  });
+
+  it("credits an agent payment's capture that only the webhook announced, for the account that started it, once", async () => {
+    const { accountId } = await createDevice(deps.db, null);
+    const urls = { returnUrl: "https://up.test/agent/paid", cancelUrl: "https://up.test/api/agent/cancelled" };
+    const { orderId } = await startAgentPayment({ db: deps.db, orders: new FakeAgentOrders(pp) }, accountId, 1000, urls);
+    pp.approveOrder(orderId, "PAYER-C");
+    const capture = (await pp.captureOrder(orderId)).purchase_units![0]!.payments!.captures![0]!;
+    const event = { id: capture.id, status: "COMPLETED", amount: capture.amount, supplementary_data: { related_ids: { order_id: orderId } } };
+    expect((await send(body("E1", "PAYMENT.CAPTURE.COMPLETED", event))).outcome).toBe("credited");
+    expect((await send(body("E2", "PAYMENT.CAPTURE.COMPLETED", event))).outcome).toBe("already credited");
+    expect(await fundedCents(deps.db, accountId)).toBe(916);
+    const [row] = await deps.db.select().from(agentPayments).where(eq(agentPayments.orderId, orderId));
+    expect(row!.status).toBe("captured");
+    const unknown = { ...event, id: "CAP-X", supplementary_data: { related_ids: { order_id: "ORDER-NOT-OURS" } } };
+    expect((await send(body("E3", "PAYMENT.CAPTURE.COMPLETED", unknown))).outcome).toBe("ignored");
   });
 
   it("credits nothing when a capture event names an account that didn't make the order", async () => {

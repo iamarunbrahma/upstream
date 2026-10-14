@@ -4,7 +4,7 @@ import { createDevice } from "../lib/auth";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
 import { agentPayments } from "../lib/db/schema";
-import { finishAgentPayment, startAgentPayment, type AgentPaymentDeps } from "../lib/funding/agent-payments";
+import { cancelAgentPayment, finishAgentPayment, startAgentPayment, type AgentPaymentDeps } from "../lib/funding/agent-payments";
 import { fundedCents } from "../lib/funding/ledger";
 import { PayPalError } from "../lib/paypal/client";
 import { FakeAgentOrders } from "../lib/paypal/fake";
@@ -132,5 +132,55 @@ describe("payments from the agent", () => {
     orders.pp.failNext("createOrder", new PayPalError(503, "SERVICE_UNAVAILABLE", "try later", null));
     await expect(startAgentPayment(deps, a, 1000, URLS)).rejects.toBeInstanceOf(PayPalError);
     expect(await deps.db.select().from(agentPayments)).toEqual([]);
+  });
+});
+
+describe("payments from the agent, under pressure", () => {
+  it("holds the daily cap when two payments are started at the same moment", async () => {
+    const a = await account();
+    await startAgentPayment(deps, a, 6000, URLS);
+    const both = await Promise.allSettled([startAgentPayment(deps, a, 4000, URLS), startAgentPayment(deps, a, 4000, URLS)]);
+    expect(both.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(await deps.db.select().from(agentPayments)).toHaveLength(2);
+  });
+
+  it("says PayPal is still processing a pending capture, and credits it once the capture completes", async () => {
+    const a = await account();
+    const { orderId } = await startAgentPayment(deps, a, 1000, URLS);
+    orders.pp.approveOrder(orderId, "PAYER-A");
+    const realCapture = orders.pp.captureOrder.bind(orders.pp);
+    orders.pp.captureOrder = async (id: string) => {
+      const done = await realCapture(id);
+      orders.pp.orders.get(id)!.purchase_units![0]!.payments!.captures![0]!.status = "PENDING";
+      return { ...done, purchase_units: orders.pp.orders.get(id)!.purchase_units };
+    };
+    expect(await finishAgentPayment(deps, a, orderId)).toEqual({ status: "processing", budgetCents: 0 });
+    const [row] = await deps.db.select().from(agentPayments).where(eq(agentPayments.orderId, orderId));
+    expect(row!.status).toBe("created");
+    orders.pp.orders.get(orderId)!.purchase_units![0]!.payments!.captures![0]!.status = "COMPLETED";
+    expect(await finishAgentPayment(deps, a, orderId)).toEqual({ status: "added", addedCents: NET_OF_1000, budgetCents: NET_OF_1000 });
+  });
+
+  it("reads the order again when PayPal's capture answer isn't the finished order", async () => {
+    const a = await account();
+    const { orderId } = await startAgentPayment(deps, a, 1000, URLS);
+    orders.pp.approveOrder(orderId, "PAYER-A");
+    orders.captureOrder = async (id: string) => {
+      await orders.pp.captureOrder(id);
+      return { id, status: "APPROVED" };
+    };
+    expect(await finishAgentPayment(deps, a, orderId)).toEqual({ status: "added", addedCents: NET_OF_1000, budgetCents: NET_OF_1000 });
+  });
+
+  it("cancels a payment the developer cancelled in PayPal, freeing the limits, but never one they approved", async () => {
+    const a = await account();
+    const cancelled = await startAgentPayment(deps, a, 8000, URLS);
+    expect(await cancelAgentPayment(deps, cancelled.orderId)).toBe(true);
+    expect(await finishAgentPayment(deps, a, cancelled.orderId)).toEqual({ status: "cancelled", budgetCents: 0 });
+    const approved = await startAgentPayment(deps, a, 10_000, URLS);
+    orders.pp.approveOrder(approved.orderId, "PAYER-A");
+    expect(await cancelAgentPayment(deps, approved.orderId)).toBe(false);
+    expect((await finishAgentPayment(deps, a, approved.orderId)).status).toBe("added");
+    expect(await cancelAgentPayment(deps, "ORDER-NOPE")).toBe(false);
   });
 });

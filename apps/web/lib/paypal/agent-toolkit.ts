@@ -50,6 +50,13 @@ interface OrderWithLinks extends PaypalOrder {
   links?: Array<{ rel?: string; href?: string }>;
 }
 
+/** An order answer has at least a string id and status; anything else is an answer we can't trust. */
+function asOrder(value: unknown): PaypalOrder {
+  const o = value as Partial<PaypalOrder> | null;
+  if (!o || typeof o !== "object" || typeof o.id !== "string" || typeof o.status !== "string") throw badAnswer();
+  return o as PaypalOrder;
+}
+
 /** AgentOrders over toolkit tools. `makeTools` runs for every call, so each call gets a fresh PayPal token. */
 export function agentOrdersFromTools(makeTools: () => ToolkitTools): AgentOrders {
   return {
@@ -66,14 +73,14 @@ export function agentOrdersFromTools(makeTools: () => ToolkitTools): AgentOrders
       return { id: o.id, status: o.status, approveUrl: link.href };
     },
     async getOrder(id) {
-      return (await call(makeTools(), "get_order", { id })) as unknown as PaypalOrder;
+      return asOrder(await call(makeTools(), "get_order", { id }));
     },
     async captureOrder(id) {
       const r = await call(makeTools(), "pay_order", { id });
       if (r.status !== "success" || !r.response || typeof r.response !== "object") {
         throw new PayPalError(502, "CAPTURE_FAILED", "PayPal couldn't capture the payment", null);
       }
-      return r.response as PaypalOrder;
+      return asOrder(r.response);
     },
   };
 }

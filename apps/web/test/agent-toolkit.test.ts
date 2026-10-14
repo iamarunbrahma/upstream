@@ -56,6 +56,11 @@ describe("the PayPal Agent Toolkit wrapper", () => {
     await expect(notJson.getOrder("X")).rejects.toMatchObject({ status: 502, code: "TOOLKIT_BAD_ANSWER" });
     const nothing = agentOrdersFromTools(() => fakeTools({ get_order: "null" }));
     await expect(nothing.getOrder("X")).rejects.toMatchObject({ status: 502, code: "TOOLKIT_BAD_ANSWER" });
+    for (const odd of [{}, { message: "x" }, { name: "RESOURCE_NOT_FOUND", message: "x", debug_id: "d" }, { error: "boom" }]) {
+      const orders = agentOrdersFromTools(() => fakeTools({ get_order: odd, pay_order: { status: "success", response: odd } }));
+      await expect(orders.getOrder("X")).rejects.toBeInstanceOf(PayPalError);
+      await expect(orders.captureOrder("X")).rejects.toBeInstanceOf(PayPalError);
+    }
   });
 
   it("captures with pay_order and returns the captured order, or fails clearly", async () => {

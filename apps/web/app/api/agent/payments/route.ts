@@ -15,7 +15,7 @@ export async function POST(req: Request): Promise<Response> {
     if (!body.success) return json({ error: "Say how much to add, in cents" }, 400);
     const origin = publicOrigin(req);
     try {
-      return json(await startAgentPayment(deps, accountId, body.data.cents, { returnUrl: `${origin}/agent/paid`, cancelUrl: `${origin}/agent/paid?cancelled=1` }));
+      return json(await startAgentPayment(deps, accountId, body.data.cents, { returnUrl: `${origin}/agent/paid`, cancelUrl: `${origin}/api/agent/cancelled` }));
     } catch (e) {
       if (e instanceof PayPalError) return json({ error: "PayPal couldn't start the payment. Try again in a minute." }, 502);
       throw e;

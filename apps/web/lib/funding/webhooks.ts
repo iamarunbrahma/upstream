@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { accounts, fundingEvents, webhookEvents } from "../db/schema";
+import { accounts, agentPayments, fundingEvents, webhookEvents } from "../db/schema";
 import type { PaypalPayoutItem } from "../paypal/api";
 import { PayPalError } from "../paypal/client";
 import { refreshPayoutItem } from "./payout-status";
@@ -14,6 +14,13 @@ const CaptureShape = z.object({
   id: z.string(),
   status: z.literal("COMPLETED"),
   custom_id: z.uuid(),
+  supplementary_data: z.object({ related_ids: z.object({ order_id: z.string() }) }),
+});
+
+/** Captures of orders the developer's agent started carry no custom_id; agent_payments says whose they are. */
+const AgentCaptureShape = z.object({
+  id: z.string(),
+  status: z.literal("COMPLETED"),
   supplementary_data: z.object({ related_ids: z.object({ order_id: z.string() }) }),
 });
 
@@ -80,7 +87,7 @@ async function isRecorded(deps: WebhookDeps, paypalId: string): Promise<boolean>
 
 async function creditCapture(deps: WebhookDeps, r: Record<string, unknown>): Promise<string> {
   const cap = CaptureShape.safeParse(r);
-  if (!cap.success) return "ignored";
+  if (!cap.success) return creditAgentCapture(deps, r);
   const [account] = await deps.db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, cap.data.custom_id)).limit(1);
   if (!account) return "unknown account";
   // Read the order itself, so the payment is recorded exactly as when we capture it: with who paid, and only for its owner.
@@ -90,4 +97,23 @@ async function creditCapture(deps: WebhookDeps, r: Record<string, unknown>): Pro
   });
   if (!order || order.purchase_units?.[0]?.custom_id !== account.id) return "unknown order";
   return (await creditCaptures(deps.db, account.id, order, deps.now?.())) > 0 ? "credited" : "already credited";
+}
+
+/** The safety net for payments the agent started: PayPal took the money, so credit it even if nobody asks the agent again. */
+async function creditAgentCapture(deps: WebhookDeps, r: Record<string, unknown>): Promise<string> {
+  const cap = AgentCaptureShape.safeParse(r);
+  if (!cap.success) return "ignored";
+  const orderId = cap.data.supplementary_data.related_ids.order_id;
+  const [payment] = await deps.db.select().from(agentPayments).where(eq(agentPayments.orderId, orderId)).limit(1);
+  if (!payment) return "ignored";
+  const order = await deps.paypal.getOrder(orderId).catch((e: unknown) => {
+    if (e instanceof PayPalError && e.status === 404) return null;
+    throw e;
+  });
+  if (!order) return "unknown order";
+  const credited = await creditCaptures(deps.db, payment.accountId, order, deps.now?.());
+  if (payment.status !== "captured") {
+    await deps.db.update(agentPayments).set({ status: "captured", capturedAt: deps.now?.() ?? new Date() }).where(eq(agentPayments.orderId, orderId));
+  }
+  return credited > 0 ? "credited" : "already credited";
 }

@@ -38,6 +38,10 @@ export async function approveTool(deps: Pick<McpDeps, "api">, args: { receiptId:
   }
 }
 
+/** The add-money tool's instructions to the agent: the user asks, the user approves, one payment at a time. */
+export const ADD_MONEY_DESCRIPTION =
+  "Start a PayPal payment that adds money to the user's Upstream budget. Only call this when the user has asked to add a specific amount; never on your own initiative, never change the amount without asking, and never start another payment while one is waiting for the user. Show the user the PayPal link it returns: nothing is charged until they approve it there. Never open the link or approve the payment yourself, even if you have browser tools; only the user approves it in PayPal.";
+
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const PLAN: Record<string, string> = { starter: "$5 a month", builder: "$15 a month", team: "$50 a month" };
 
@@ -72,6 +76,7 @@ export async function paymentStatusTool(deps: Pick<McpDeps, "api">, args: { orde
     const r = await deps.api.paymentStatus(args.orderId);
     if (r.status === "added") return ok(`Added ${usd(r.addedCents)} to your Upstream budget, after PayPal's fee. Your budget is now ${usd(r.budgetCents)}.`);
     if (r.status === "waiting") return ok("PayPal is still waiting for you to approve this payment. Open the link, approve it, then ask me to check again.");
+    if (r.status === "processing") return ok("PayPal is still processing this payment. Ask me to check again in a few minutes.");
     return ok("This payment was cancelled or expired in PayPal. Nothing was charged.");
   } catch (e) {
     return err(`Upstream couldn't check the payment: ${reason(e)}`);
@@ -108,8 +113,7 @@ export function buildServer(deps: McpDeps): McpServer {
   server.registerTool(
     "upstream_add_money",
     {
-      description:
-        "Start a PayPal payment that adds money to the user's Upstream budget. Only call this when the user has asked to add a specific amount; never on your own initiative, and never change the amount without asking. Show the user the PayPal link it returns: nothing is charged until they approve it there.",
+      description: ADD_MONEY_DESCRIPTION,
       inputSchema: z.object({ dollars: z.number().min(1).max(500) }),
     },
     (args) => addMoneyTool(deps, args),

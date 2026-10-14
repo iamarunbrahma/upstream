@@ -250,12 +250,12 @@ export class FakeAgentOrders implements AgentOrders {
     return { id: o.id, status: o.status, approveUrl: `https://www.sandbox.paypal.com/checkoutnow?token=${o.id}` };
   }
 
-  async getOrder(id: string) {
+  async getOrder(id: string): Promise<PaypalOrder> {
     this.calls.push("getOrder");
     return this.pp.getOrder(id);
   }
 
-  async captureOrder(id: string) {
+  async captureOrder(id: string): Promise<PaypalOrder> {
     this.calls.push("captureOrder");
     return this.pp.captureOrder(id);
   }

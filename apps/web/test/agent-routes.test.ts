@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({ deps: null as unknown as Deps }));
 vi.mock("../lib/deps", () => ({ getDeps: async () => h.deps }));
 const { POST: start } = await import("../app/api/agent/payments/route");
 const { POST: finish } = await import("../app/api/agent/payments/[id]/route");
+const { GET: cancelled } = await import("../app/api/agent/cancelled/route");
 
 let orders: FakeAgentOrders;
 let token: string;
@@ -39,7 +40,7 @@ describe("agent payment routes", () => {
     const res = await start(post("http://local/api/agent/payments", { cents: 1000 }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ orderId: "ORDER-1", approveUrl: "https://www.sandbox.paypal.com/checkoutnow?token=ORDER-1", cents: 1000 });
-    expect(orders.urls.get("ORDER-1")).toEqual({ returnUrl: "https://up.test/agent/paid", cancelUrl: "https://up.test/agent/paid?cancelled=1" });
+    expect(orders.urls.get("ORDER-1")).toEqual({ returnUrl: "https://up.test/agent/paid", cancelUrl: "https://up.test/api/agent/cancelled" });
   });
 
   it("finish it: waiting before approval, added after", async () => {
@@ -69,5 +70,14 @@ describe("agent payment routes", () => {
     h.deps = { ...h.deps, submitLimiter: createRateLimiter({ limit: 1, windowMs: 60_000 }) };
     expect((await start(post("http://local/api/agent/payments", { cents: 1000 }))).status).toBe(200);
     expect((await start(post("http://local/api/agent/payments", { cents: 1000 }))).status).toBe(429);
+  });
+
+  it("cancel a payment when PayPal sends the developer back from Cancel, then show the cancelled page", async () => {
+    await start(post("http://local/api/agent/payments", { cents: 1000 }));
+    const res = await cancelled(new Request("http://local/api/agent/cancelled?token=ORDER-1"));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("https://up.test/agent/paid?cancelled=1");
+    expect(await (await finishFor("ORDER-1")).json()).toEqual({ status: "cancelled", budgetCents: 0 });
+    expect((await cancelled(new Request("http://local/api/agent/cancelled"))).status).toBe(303);
   });
 });
