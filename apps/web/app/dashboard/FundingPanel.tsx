@@ -7,6 +7,7 @@ import { recordPayment } from "./record-payment";
 
 interface Me {
   balanceCents: number;
+  givenCents: number;
   subscription: { id: string; tier: string; status: string } | null;
   autoApprove: boolean;
   receipts: { proposed: number; approved: number; skipped: number };
@@ -80,6 +81,7 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
       <p style={{ fontSize: 32, margin: "8px 0" }}>
         {formatUsd(me.balanceCents)} <span style={{ fontSize: 16, color: "#555" }}>in your budget</span>
       </p>
+      {me.givenCents > 0 && <p>{formatUsd(me.givenCents)} set aside for open-source maintainers so far.</p>}
       {notice && <p role="status">{notice}</p>}
       {pending && (
         <p role="status">

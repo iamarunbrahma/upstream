@@ -67,6 +67,7 @@ describe("dashboard API", () => {
     const res = await getMe(new Request("http://up.test/api/me", { headers: { authorization: `Bearer ${token}` } }));
     expect(await res.json()).toEqual({
       balanceCents: 916,
+      givenCents: 0,
       subscription: null,
       autoApprove: false,
       receipts: { proposed: 1, approved: 0, skipped: 0 },
@@ -79,7 +80,7 @@ describe("dashboard API", () => {
     await fund(accountId, 1000);
     await setAside(accountId, 400);
     const res = await getMe(new Request("http://up.test/api/me", { headers: { authorization: `Bearer ${token}` } }));
-    expect(((await res.json()) as { balanceCents: number }).balanceCents).toBe(600);
+    expect(await res.json()).toMatchObject({ balanceCents: 600, givenCents: 400 });
   });
 
   it("shows the active subscription even when an abandoned one changed more recently", async () => {
