@@ -20,9 +20,7 @@ beforeEach(async () => {
   db = createPgliteDb();
   await migrateDb(db, "pglite");
   h.deps = { db, http: async () => ({ status: 404, body: null }), model: null } as unknown as Deps;
-  const signed = await signInMaintainer(db, { id: 7, login: "alice" }, OCT);
-  if (!signed.ok) throw new Error("sign-in failed");
-  session = signed.session;
+  session = await signInMaintainer(db, { id: 7, login: "alice" }, OCT);
 });
 
 async function money() {

@@ -1,34 +1,42 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { accruals, maintainers, payoutItems } from "../db/schema";
+import { accruals, maintainers, payoutItems, recipientCache } from "../db/schema";
 import { withSettleLock } from "../funding/lock";
 import { createMaintainerSession } from "./sessions";
 
-export type SignIn = { ok: true; session: string } | { ok: false; reason: "taken" };
+/** Moves a maintainer row, and the money and payout lines filed under its login, to another login. */
+async function relabel(tx: Db, from: string, to: string): Promise<void> {
+  await tx.update(maintainers).set({ login: to }).where(eq(maintainers.login, from));
+  await tx.update(accruals).set({ login: to }).where(eq(accruals.login, from));
+  await tx.update(payoutItems).set({ login: to }).where(eq(payoutItems.login, from));
+  // Cached "who gets paid" answers that name the old login are out of date now.
+  await tx.delete(recipientCache).where(sql`${recipientCache.data}->'recipients' @> ${JSON.stringify([{ login: from }])}::jsonb`);
+}
 
 /**
- * Signs a maintainer in by their GitHub account. Identity is GitHub's numeric id: when the login was renamed,
- * the row and everything they're owed move to the new login. A claim made for their login before they ever
- * signed in (sandbox seeding) becomes theirs. A login another GitHub account holds here is refused.
+ * Signs a maintainer in by their GitHub account and returns a new session. Identity is GitHub's numeric id:
+ * when the login was renamed, the row and everything filed under it move to the new login. GitHub has just
+ * proved who holds this login now, so a row another GitHub account left under it (they renamed away, and the
+ * name was taken again) is moved aside under "~<their id>", where it stays theirs until they sign in again.
+ * A claim made for this login before anyone signed in (sandbox seeding) becomes theirs.
  */
-export async function signInMaintainer(db: Db, user: { id: number; login: string }, now: Date = new Date()): Promise<SignIn> {
+export async function signInMaintainer(db: Db, user: { id: number; login: string }, now: Date = new Date()): Promise<string> {
   const login = user.login.toLowerCase();
-  // Moving money to a renamed login is an accrual change, so it waits for any settlement in progress.
+  // Moving money between logins is an accrual change, so it waits for any settlement in progress.
   return withSettleLock(db, async (tx) => {
     const [mine] = await tx.select().from(maintainers).where(eq(maintainers.githubId, user.id)).limit(1);
     const [named] = await tx.select().from(maintainers).where(eq(maintainers.login, login)).limit(1);
-    if (named && named.githubId !== null && named.githubId !== user.id) return { ok: false, reason: "taken" };
+    if (named && named.githubId !== user.id && (named.githubId !== null || mine)) {
+      await relabel(tx, login, named.githubId !== null ? `~${named.githubId}` : `~seeded:${login}`);
+    }
     if (mine && mine.login !== login) {
-      if (named) return { ok: false, reason: "taken" };
-      await tx.update(maintainers).set({ login }).where(eq(maintainers.githubId, user.id));
-      await tx.update(accruals).set({ login }).where(eq(accruals.login, mine.login));
-      await tx.update(payoutItems).set({ login }).where(eq(payoutItems.login, mine.login));
-    } else if (!mine && named) {
+      await relabel(tx, mine.login, login);
+    } else if (!mine && named && named.githubId === null) {
       await tx.update(maintainers).set({ githubId: user.id }).where(eq(maintainers.login, login));
     } else if (!mine) {
       await tx.insert(maintainers).values({ login, githubId: user.id });
     }
-    return { ok: true, session: await createMaintainerSession(tx, user.id, now) };
+    return createMaintainerSession(tx, user.id, now);
   });
 }
 

@@ -24,7 +24,6 @@ export async function GET(req: Request): Promise<Response> {
     return plainPage("Couldn't reach GitHub. Please try again.", 502, [clear]);
   }
   if (!user) return plainPage(NOT_CONFIRMED, 400, [clear]);
-  const signedIn = await signInMaintainer(deps.db, user);
-  if (!signedIn.ok) return plainPage("A different GitHub account already uses this name here, so we can't sign you in with it.", 409, [clear]);
-  return redirect("/maintainer", [clear, maintainerCookie(signedIn.session, secureCookies())]);
+  const session = await signInMaintainer(deps.db, user);
+  return redirect("/maintainer", [clear, maintainerCookie(session, secureCookies())]);
 }

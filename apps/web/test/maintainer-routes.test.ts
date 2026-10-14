@@ -81,7 +81,7 @@ describe("GitHub sign-in routes", () => {
     expect((await githubCallback(get(`/maintainer/github/callback?code=alice&state=${state}`, { [OAUTH_COOKIE]: state }))).status).toBe(400);
   });
 
-  it("say plainly when GitHub doesn't confirm who someone is, or their login belongs to someone else here", async () => {
+  it("say plainly when GitHub doesn't confirm who someone is, and sign in whoever holds a reused login now", async () => {
     const start = async () => cookieValue(await githubStart(get("/maintainer/github/start")), OAUTH_COOKIE)!;
     let s = await start();
     const refused = await githubCallback(get(`/maintainer/github/callback?code=nobody&state=${s}`, { [OAUTH_COOKIE]: s }));
@@ -89,8 +89,9 @@ describe("GitHub sign-in routes", () => {
     expect(await refused.text()).toContain("GitHub didn't confirm who you are");
     await h.deps.db.insert(maintainers).values({ login: "bob", githubId: 99 });
     s = await start();
-    const taken = await githubCallback(get(`/maintainer/github/callback?code=bob&state=${s}`, { [OAUTH_COOKIE]: s }));
-    expect(taken.status).toBe(409);
+    const reused = await githubCallback(get(`/maintainer/github/callback?code=bob&state=${s}`, { [OAUTH_COOKIE]: s }));
+    expect(reused.status).toBe(303);
+    expect(await maintainerForSession(h.deps.db, cookieValue(reused, MAINTAINER_COOKIE)!)).toEqual({ login: "bob", githubId: 8 });
   });
 
   it("limit how often one visitor can start signing in", async () => {

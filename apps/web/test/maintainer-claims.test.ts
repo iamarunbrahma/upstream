@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createDevice } from "../lib/auth";
 import { createPgliteDb, type Db } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
-import { accruals, maintainers, payoutItems, settlements } from "../lib/db/schema";
+import { accruals, maintainers, payoutItems, recipientCache, settlements } from "../lib/db/schema";
 import { linkPayPal, signInMaintainer } from "../lib/maintainers/claims";
 import { maintainerForSession } from "../lib/maintainers/sessions";
 
@@ -20,9 +20,8 @@ describe("signInMaintainer", () => {
   it("signs a maintainer in by their GitHub account, creating them once", async () => {
     const first = await signInMaintainer(db, { id: 7, login: "Alice" }, NOW);
     const again = await signInMaintainer(db, { id: 7, login: "alice" }, NOW);
-    if (!first.ok || !again.ok) throw new Error("expected sign-ins");
-    expect(first.session).not.toBe(again.session);
-    expect(await maintainerForSession(db, first.session, NOW)).toEqual({ login: "alice", githubId: 7 });
+    expect(first).not.toBe(again);
+    expect(await maintainerForSession(db, first, NOW)).toEqual({ login: "alice", githubId: 7 });
     expect(await db.select().from(maintainers)).toHaveLength(1);
   });
 
@@ -35,7 +34,7 @@ describe("signInMaintainer", () => {
       { settlementId: s!.id, funderId: accountId, login: "alice", ecosystem: "npm", name: "a", cents: 500 },
       { settlementId: s!.id, funderId: accountId, login: "alice", ecosystem: "npm", name: "a", cents: 300, status: "paid", payoutItemId: line!.id },
     ]);
-    expect((await signInMaintainer(db, { id: 7, login: "Alice-Renamed" }, NOW)).ok).toBe(true);
+    await signInMaintainer(db, { id: 7, login: "Alice-Renamed" }, NOW);
     expect((await row(7))!.login).toBe("alice-renamed");
     expect((await db.select().from(accruals)).map((a) => a.login)).toEqual(["alice-renamed", "alice-renamed"]);
     expect((await db.select().from(payoutItems))[0]!.login).toBe("alice-renamed");
@@ -43,16 +42,34 @@ describe("signInMaintainer", () => {
 
   it("takes over a sandbox claim made for their login before they signed in", async () => {
     await db.insert(maintainers).values({ login: "carol", paypalPayerId: "P-C", claimedAt: new Date(NOW.getTime() - 8 * DAY) });
-    expect((await signInMaintainer(db, { id: 9, login: "carol" }, NOW)).ok).toBe(true);
+    await signInMaintainer(db, { id: 9, login: "carol" }, NOW);
     expect(await row(9)).toMatchObject({ login: "carol", paypalPayerId: "P-C" });
   });
 
-  it("refuses a login that another GitHub account holds here", async () => {
-    await db.insert(maintainers).values({ login: "bob", githubId: 5 });
-    expect(await signInMaintainer(db, { id: 6, login: "bob" }, NOW)).toEqual({ ok: false, reason: "taken" });
+  it("gives a login to whoever GitHub says holds it now, and moves the earlier holder's row and money aside", async () => {
+    // Bob signed in as "bob", then renamed on GitHub; Carol took the free name "bob".
+    await db.insert(maintainers).values({ login: "bob", githubId: 5, paypalPayerId: "P-B", claimedAt: NOW });
+    const { accountId } = await createDevice(db, null);
+    const [s] = await db.insert(settlements).values({}).returning();
+    await db.insert(accruals).values({ settlementId: s!.id, funderId: accountId, login: "bob", ecosystem: "npm", name: "a", cents: 500 });
+    await db.insert(recipientCache).values({ repo: "o/a", data: { source: "committers", recipients: [{ login: "bob", shareBp: 10_000 }] }, fetchedAt: NOW });
+
+    await signInMaintainer(db, { id: 6, login: "bob" }, NOW);
+    expect(await row(6)).toMatchObject({ login: "bob", paypalPayerId: null });
+    expect(await row(5)).toMatchObject({ login: "~5", paypalPayerId: "P-B" });
+    expect((await db.select().from(accruals))[0]!.login).toBe("~5");
+    expect(await db.select().from(recipientCache)).toEqual([]);
+
+    await signInMaintainer(db, { id: 5, login: "bobby" }, NOW);
+    expect((await row(5))!.login).toBe("bobby");
+    expect((await db.select().from(accruals))[0]!.login).toBe("bobby");
+  });
+
+  it("lets a maintainer rename into a login that only a sandbox claim used", async () => {
     await signInMaintainer(db, { id: 8, login: "dan" }, NOW);
-    expect(await signInMaintainer(db, { id: 8, login: "bob" }, NOW)).toEqual({ ok: false, reason: "taken" });
-    expect((await row(8))!.login).toBe("dan");
+    await db.insert(maintainers).values({ login: "danny", paypalPayerId: "P-SEED" });
+    await signInMaintainer(db, { id: 8, login: "danny" }, NOW);
+    expect((await row(8))!.login).toBe("danny");
   });
 });
 
