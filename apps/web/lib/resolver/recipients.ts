@@ -15,14 +15,20 @@ const LOGIN = /^[a-z\d][a-z\d-]{0,38}$/;
 /** GitHub's REST API. The token is optional; without one GitHub allows 60 requests an hour. */
 export function createGithubGet(token: string | undefined, fetchImpl: typeof fetch = fetch): GithubGet {
   return async (path) => {
-    const res = await fetchImpl(`https://api.github.com${path}`, {
-      headers: {
-        accept: "application/vnd.github+json",
-        "user-agent": "upstream-pay (+https://github.com/iamarunbrahma/upstream)",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      signal: AbortSignal.timeout(15_000),
-    });
+    let res: Response;
+    try {
+      res = await fetchImpl(`https://api.github.com${path}`, {
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "upstream-pay (+https://github.com/iamarunbrahma/upstream)",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      // A dropped connection or a timeout is GitHub being unavailable: try later, like a 5xx.
+      return { status: 503, body: null };
+    }
     return { status: res.status, body: await res.json().catch(() => null) };
   };
 }

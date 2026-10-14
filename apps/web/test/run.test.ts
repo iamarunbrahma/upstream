@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
 import { describeRun, runSettlement, settlementDeps } from "../lib/funding/run";
+import { PayPalError } from "../lib/paypal/client";
 import { FakePayPal } from "../lib/paypal/fake";
 import type { Deps } from "../lib/receipts/service";
 import type { GithubGet } from "../lib/resolver/recipients";
@@ -34,9 +35,25 @@ describe("runSettlement", () => {
   });
 });
 
+describe("runSettlement when PayPal can't be reached", () => {
+  it("still settles everyone else, and says which check has to wait", async () => {
+    const w = await settlementWorld();
+    const early = await w.funder(1000);
+    await w.receipt(early, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 8);
+    await runSettlement(w.deps);
+    const later = await w.funder(700);
+    await w.receipt(later, { a: 10_000 });
+    w.paypal.failNext("getPayoutBatch", new PayPalError(503, "SERVICE_UNAVAILABLE", "try later", null));
+    const r = await runSettlement(w.deps);
+    expect(r).toMatchObject({ uncheckedBatches: 1, settledFunders: 1, setAsideCents: 700 });
+    expect(describeRun(r)[0]).toBe("Couldn't reach PayPal to check 1 payout batch. It will be checked on the next run.");
+  });
+});
+
 describe("describeRun", () => {
   it("says plainly when a batch is too old to send again safely", () => {
-    const quiet = { settlementId: "s", expiredReceipts: 0, settledFunders: 0, waitingFunders: 0, setAsideCents: 0, returnedCents: 0, payoutLines: 0, queuedCents: 0, reconciledLines: 0 };
+    const quiet = { settlementId: "s", expiredReceipts: 0, settledFunders: 0, waitingFunders: 0, setAsideCents: 0, returnedCents: 0, payoutLines: 0, queuedCents: 0, reconciledLines: 0, uncheckedBatches: 0 };
     expect(describeRun({ ...quiet, sent: [{ settlementId: "s", outcome: "needs-check" }] })).toEqual([
       "A payout batch may already have gone out, and it's too old to send again safely. Check it in PayPal before paying anyone by hand.",
     ]);

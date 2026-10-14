@@ -11,6 +11,8 @@ export type RunDeps = SettleDeps & PayoutDeps;
 
 export interface RunReport extends SettleSummary {
   reconciledLines: number;
+  /** Sent batches PayPal couldn't be asked about this time; they're checked on the next run. */
+  uncheckedBatches: number;
   sent: SendResult[];
 }
 
@@ -31,9 +33,9 @@ export function settlementDeps(deps: Deps & { paypal: PayPalApi }, gh: GithubGet
 
 /** The whole job: catch up on payout statuses with PayPal, settle, then send payouts. */
 export async function runSettlement(deps: RunDeps): Promise<RunReport> {
-  const reconciledLines = await reconcilePayouts(deps);
+  const checked = await reconcilePayouts(deps);
   const summary = await settle(deps);
-  return { ...summary, reconciledLines, sent: await payOut(deps) };
+  return { ...summary, reconciledLines: checked.updated, uncheckedBatches: checked.unreachable, sent: await payOut(deps) };
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -41,6 +43,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 /** What a run did, in plain words, for the job's log and the "Settle now" button. */
 export function describeRun(r: RunReport): string[] {
   const out: string[] = [];
+  if (r.uncheckedBatches > 0) {
+    out.push(`Couldn't reach PayPal to check ${plural(r.uncheckedBatches, "payout batch", "payout batches")}. ${r.uncheckedBatches === 1 ? "It" : "They"} will be checked on the next run.`);
+  }
   if (r.reconciledLines > 0) out.push(`Checked ${plural(r.reconciledLines, "payout line", "payout lines")} with PayPal.`);
   const before = out.length;
   if (r.expiredReceipts > 0) out.push(`Dropped ${plural(r.expiredReceipts, "receipt", "receipts")} nobody approved within 14 days.`);

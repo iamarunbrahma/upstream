@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
-import { fundingGithubLogins, recipientsFor, resolveRecipients, type GithubGet } from "../lib/resolver/recipients";
+import { createGithubGet, fundingGithubLogins, recipientsFor, resolveRecipients, type GithubGet } from "../lib/resolver/recipients";
 
 const NOW = new Date("2026-10-14T10:00:00Z");
 const DAY = 86_400_000;
@@ -104,6 +104,20 @@ describe("resolveRecipients", () => {
     expect(await resolveRecipients(repo, github({ [`${base}/contents/.github/FUNDING.yml`]: { status: 403, body: {} } }).get, NOW)).toBe("later");
     expect(await resolveRecipients(repo, github({ [`${base}/commits*`]: { status: 502, body: {} } }).get, NOW)).toBe("later");
     await expect(resolveRecipients(repo, github({ [`${base}/contents/.github/FUNDING.yml`]: { status: 401, body: {} } }).get, NOW)).rejects.toThrow(/GitHub token/);
+  });
+});
+
+describe("createGithubGet", () => {
+  it("turns a dropped connection or a timeout into a 'try later' answer instead of an error", async () => {
+    const dropped = createGithubGet(undefined, (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch);
+    expect(await dropped("/repos/acme/widget/contents/.github/FUNDING.yml")).toEqual({ status: 503, body: null });
+    expect(await resolveRecipients(repo, dropped, NOW)).toBe("later");
+    const slow = createGithubGet("tok", (async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }) as typeof fetch);
+    expect((await slow("/users/alice")).status).toBe(503);
   });
 });
 

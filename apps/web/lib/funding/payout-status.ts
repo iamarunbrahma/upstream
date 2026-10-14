@@ -73,22 +73,33 @@ export async function refreshPayoutItem(deps: PayoutDeps, resource: PaypalPayout
   return applyPayoutItem(deps.db, current);
 }
 
-/** Reads every sent batch that still has unfinished lines, for when webhooks can't reach us. Returns lines updated. */
-export async function reconcilePayouts(deps: PayoutDeps): Promise<number> {
+/**
+ * Reads every sent batch that still has unfinished lines, for when webhooks can't reach us. A batch PayPal can't
+ * be asked about right now is skipped and counted, so one failure never stops the rest of the run.
+ */
+export async function reconcilePayouts(deps: PayoutDeps): Promise<{ updated: number; unreachable: number }> {
   const open = await deps.db
     .selectDistinct({ id: settlements.id, batchId: settlements.payoutBatchId })
     .from(settlements)
     .innerJoin(payoutItems, eq(payoutItems.settlementId, settlements.id))
     .where(isNotNull(settlements.payoutBatchId));
   let updated = 0;
+  let unreachable = 0;
   for (const s of open) {
     const lines = await deps.db.select({ status: payoutItems.status }).from(payoutItems).where(eq(payoutItems.settlementId, s.id));
     if (lines.every((l) => FINAL.includes(l.status))) continue;
-    const batch = await deps.paypal.getPayoutBatch(s.batchId!);
+    let batch;
+    try {
+      batch = await deps.paypal.getPayoutBatch(s.batchId!);
+    } catch (e) {
+      if (!(e instanceof PayPalError)) throw e;
+      unreachable += 1;
+      continue;
+    }
     await deps.db.update(settlements).set({ batchStatus: batch.batch_header.batch_status }).where(eq(settlements.id, s.id));
     for (const item of batch.items ?? []) {
       if ((await applyPayoutItem(deps.db, { ...item, payout_batch_id: item.payout_batch_id ?? s.batchId! })) === "payout line updated") updated += 1;
     }
   }
-  return updated;
+  return { updated, unreachable };
 }

@@ -33,10 +33,10 @@ describe("payout status", () => {
     await settle(w.deps);
     await payOut(w.deps);
     w.paypal.setPayoutItemStatus((await line()).id, "SUCCESS");
-    expect(await reconcilePayouts(w.deps)).toBe(1);
+    expect(await reconcilePayouts(w.deps)).toMatchObject({ updated: 1 });
     expect(await w.owed(funder, "paid")).toEqual({ carol: 1000 });
     expect(await line()).toMatchObject({ status: "SUCCESS", feeCents: 25 });
-    expect(await reconcilePayouts(w.deps)).toBe(0);
+    expect(await reconcilePayouts(w.deps)).toMatchObject({ updated: 0 });
   });
 
   it("puts bounced money back on hold, and pays it on a later run", async () => {
