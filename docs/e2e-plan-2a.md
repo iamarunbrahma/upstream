@@ -12,7 +12,7 @@ Real PayPal sandbox money, through the real dashboard, against the local dev ser
 | Step | What happened | Budget |
 |---|---|---|
 | 1 | `upstream dashboard` printed a one-time link; "Continue" opened the dashboard | $0.00 |
-| 2 | Subscribed to the $5 plan | $4.34 |
+| 2 | Subscribed to the $5 plan; the first payment was credited by a reconcile about 30 seconds later | $4.34 |
 | 3 | Topped up $10 | $13.50 |
 | 4 | Captured the same order again, reconciled the subscription again | $13.50 (`credited: 0` both times) |
 | 5 | Ticked auto-approve, sent a receipt from the fixture session | $13.50, receipt ends with `Approved.` |
@@ -29,7 +29,7 @@ Every route now also sends `X-Frame-Options: DENY` and `Content-Security-Policy:
 
 PayPal's popup took the sandbox login, showed $5.00 USD, and the buyer agreed. The page said "Thanks. Your first payment will show up here in a few minutes." and the plan section switched to "You give $5 a month."
 
-- **Time to first payment:** PayPal stamped the transaction seconds after approval, but it was not yet in the transaction list when the SDK's `onApprove` ran its reconcile. A reconcile about 30 seconds later returned `{"status":"ACTIVE","credited":434}`.
+- **Time to first payment:** PayPal stamped the transaction seconds after approval, but it was not yet in the transaction list when the SDK's `onApprove` ran its reconcile. A reconcile about 30 seconds later returned `{"status":"ACTIVE","credited":434}`. After the final review, the dashboard keeps checking for about 2 minutes after approval and then offers "Check again", and a `PAYMENT.SALE.COMPLETED` webhook for a payment PayPal doesn't list yet answers 503 so PayPal sends it again.
 - **Response shape:** as the code expects. The subscription transaction has `amount_with_breakdown.gross_amount` 5.00, `fee_amount` 0.66 and `net_amount` 4.34, plus `payer_name`, `payer_email` and `time`. No code change.
 - The popup did not close after approval. It went to the sandbox home page and was closed by hand. The approval itself had already reached the page.
 

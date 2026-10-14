@@ -3,6 +3,7 @@
 import { PayPalOneTimePaymentButton, PayPalProvider, PayPalSubscriptionButton } from "@paypal/react-paypal-js/sdk-v6";
 import { useCallback, useEffect, useState } from "react";
 import { formatUsd } from "../../lib/format";
+import { recordPayment } from "./record-payment";
 
 interface Me {
   fundedCents: number;
@@ -28,6 +29,7 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [topupCents, setTopupCents] = useState(1000);
+  const [pending, setPending] = useState<{ message: string; retry: () => void } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -40,6 +42,27 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  /** Records a payment PayPal has approved. If that can't finish yet, offers "Check again", which repeats it safely. */
+  async function settle(record: () => Promise<{ credited: number }>, tries: number, notYet: string): Promise<void> {
+    setError(null);
+    setPending(null);
+    setNotice("Recording your payment...");
+    const r = await recordPayment(
+      async () => {
+        const answer = await record();
+        await refresh();
+        return answer;
+      },
+      { tries, waitMs: 10_000 },
+    );
+    if (r && r.credited > 0) {
+      setNotice(`Thanks. ${formatUsd(r.credited)} was added to your budget.`);
+      return;
+    }
+    setNotice(null);
+    setPending({ message: r ? notYet : "PayPal has your payment, but we couldn't record it yet.", retry: () => void settle(record, 1, notYet) });
+  }
 
   if (!me && error) {
     return (
@@ -58,6 +81,14 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
         {formatUsd(me.fundedCents)} <span style={{ fontSize: 16, color: "#555" }}>in your budget</span>
       </p>
       {notice && <p role="status">{notice}</p>}
+      {pending && (
+        <p role="status">
+          {pending.message}{" "}
+          <button type="button" onClick={pending.retry}>
+            Check again
+          </button>
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
 
       {!me.paymentsReady ? (
@@ -76,9 +107,7 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
                     subscriptionId: (await call<{ subscriptionId: string }>("POST", "/api/subscriptions", { tier: t.key })).subscriptionId,
                   })}
                   onApprove={async ({ subscriptionId }) => {
-                    const r = await call<{ credited: number }>("POST", `/api/subscriptions/${subscriptionId}/reconcile`);
-                    setNotice(r.credited > 0 ? `Thanks. ${formatUsd(r.credited)} was added to your budget.` : "Thanks. Your first payment will show up here in a few minutes.");
-                    await refresh();
+                    void settle(() => call<{ credited: number }>("POST", `/api/subscriptions/${subscriptionId}/reconcile`), 12, "Thanks. Your first payment will show up here soon.");
                   }}
                   onError={() => setError("PayPal couldn't start the subscription. Please try again.")}
                 />
@@ -97,9 +126,7 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
           <PayPalOneTimePaymentButton
             createOrder={async () => ({ orderId: (await call<{ orderId: string }>("POST", "/api/topups", { cents: topupCents })).orderId })}
             onApprove={async ({ orderId }) => {
-              const r = await call<{ credited: number }>("POST", `/api/topups/${orderId}/capture`);
-              setNotice(`Thanks. ${formatUsd(r.credited)} was added to your budget.`);
-              await refresh();
+              void settle(() => call<{ credited: number }>("POST", `/api/topups/${orderId}/capture`), 3, "Thanks. PayPal is still processing this payment.");
             }}
             onError={() => setError("PayPal couldn't take the payment. Please try again.")}
           />
