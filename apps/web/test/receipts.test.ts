@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createDevice } from "../lib/auth";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
+import { PROMPT_VERSION } from "../lib/judge/prompt";
 import type { JudgeModel } from "../lib/judge/types";
 import { decideReceipt, getReceipt, listReceipts, submitReceipt, type Deps } from "../lib/receipts/service";
 import { formatPercent } from "../lib/receipts/view";
@@ -38,7 +39,7 @@ describe("submitReceipt", () => {
     ] });
     const model: JudgeModel = { id: "fake-model", generate: async () => raw };
     const { view } = await submitReceipt({ ...deps, model }, account, payload());
-    expect(view).toMatchObject({ source: "ai", modelId: "fake-model", promptVersion: "judge-v1" });
+    expect(view).toMatchObject({ source: "ai", modelId: "fake-model", promptVersion: PROMPT_VERSION });
     expect(view.items[0]).toMatchObject({ name: "fastapi", role: "foundation", percent: "79.4%" });
   });
 

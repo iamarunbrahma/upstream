@@ -24,7 +24,12 @@ What the PayPal sandbox and the Gemini key can do, checked before building on th
 | gemini-flash-latest | 503, high demand |
 | gemini-2.5-flash | OK, 1.8 s |
 
-**Chosen: `GEMINI_MODEL=gemini-2.5-flash`.** The judge has a 20 s timeout, and a demo must not fall back to fixed scores, so reliability beats recency on a free key. The Task 7 eval re-checks this choice against `gemini-3.5-flash`.
+**First choice: `gemini-2.5-flash`.** The judge has a 20 s timeout, and a demo must not fall back to fixed scores, so reliability beats recency on a free key. It scored top-1 10/10 and mean tau 0.87 on the eval.
+
+**Changed later the same day to `GEMINI_MODEL=gemini-2.5-flash-lite`.**
+- The free tier allows `gemini-2.5-flash` only **20 requests per day**. The 429 reads `generate_content_free_tier_requests, limit: 20`, with a reset about 17 hours away. That's too few to record a demo or get through judging.
+- Quotas are per model. `gemini-2.5-flash-lite` scored the same on the `judge-v2` prompt (top-1 10/10, mean tau 0.87) and is faster.
+- Enabling billing on the GCP project removes the limit. That's a decision for the owner.
 
 ## Surprises
 

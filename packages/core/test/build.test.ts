@@ -48,7 +48,21 @@ describe("buildEvidence", () => {
       disk: { ...emptyDisk(), npmDeps: new Set(["express"]) },
     });
     expect(out.packages).toEqual([
-      { ecosystem: "npm", name: "express", installed: false, manifestAdded: false, importFiles: 0, usageLines: 1, docsReads: 0, kind: "dependency" },
+      { ecosystem: "npm", name: "express", installed: false, manifestAdded: false, importFiles: 1, usageLines: 1, docsReads: 0, kind: "dependency" },
+    ]);
+  });
+
+  it("counts every edited file that imports a package, even when the edit only touches markup", () => {
+    const full = (name: string) => `import React from "react";\nexport function ${name}() {\n  return <div className="y" />;\n}\n`;
+    const changes = ["A", "B", "C"].map((n) => ({
+      filePath: `/r/src/${n}.tsx`,
+      added: '  return <div className="y" />;',
+      removed: '  return <div className="x" />;',
+      fullContent: full(n),
+    }));
+    const out = buildEvidence({ changes, installs: [], docsUrls: [], disk: { ...emptyDisk(), npmDeps: new Set(["react"]) } });
+    expect(out.packages).toEqual([
+      { ecosystem: "npm", name: "react", installed: false, manifestAdded: false, importFiles: 3, usageLines: 0, docsReads: 0, kind: "dependency" },
     ]);
   });
 

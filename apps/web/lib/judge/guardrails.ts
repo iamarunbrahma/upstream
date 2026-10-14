@@ -1,3 +1,4 @@
+import { packageKey } from "@upstream/core";
 import { z } from "zod";
 import { fallbackReason, fallbackRole, heuristicScore } from "./fallback";
 import { ROLES, type Allocation, type JudgeItem, type JudgeRow } from "./types";
@@ -92,12 +93,21 @@ export function boundByEvidence(modelWeights: number[], evidenceScores: number[]
 
 /** Model output -> allocations over exactly the evidence rows. The model can't add packages or exceed evidence bounds. */
 export function applyGuardrails(rows: JudgeRow[], items: JudgeItem[]): Allocation[] {
-  const byName = new Map<string, JudgeItem>();
+  // Items are keyed "ecosystem:name". A bare name is accepted only when one row has it, so npm and PyPI
+  // packages that share a name (openai, stripe) never share an answer.
+  const byKey = new Map<string, JudgeItem>();
   for (const item of items) {
     const key = item.package.trim().toLowerCase();
-    if (!byName.has(key)) byName.set(key, item);
+    if (!byKey.has(key)) byKey.set(key, item);
   }
-  const picked = rows.map((r) => byName.get(r.name.toLowerCase()) ?? null);
+  const rowsPerName = new Map<string, number>();
+  for (const r of rows) rowsPerName.set(r.name.toLowerCase(), (rowsPerName.get(r.name.toLowerCase()) ?? 0) + 1);
+  const picked = rows.map(
+    (r) =>
+      byKey.get(packageKey(r).toLowerCase()) ??
+      (rowsPerName.get(r.name.toLowerCase()) === 1 ? byKey.get(r.name.toLowerCase()) : undefined) ??
+      null,
+  );
   const bp = toBasisPoints(boundByEvidence(picked.map((p) => p?.weight ?? 0), rows.map(heuristicScore)));
   return rows.map((r, i) => {
     const item = picked[i];

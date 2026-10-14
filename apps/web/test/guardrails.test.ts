@@ -90,6 +90,24 @@ describe("applyGuardrails", () => {
   });
 });
 
+describe("applyGuardrails with the same name in two ecosystems", () => {
+  it("keeps npm and PyPI packages with the same name apart", () => {
+    const rows = [row("openai", { ecosystem: "pypi", importFiles: 5, usageLines: 40 }), row("openai", { ecosystem: "npm", importFiles: 1, usageLines: 1 })];
+    const out = applyGuardrails(rows, [
+      { package: "pypi:openai", weight: 90, role: "foundation", reason: "Python side." },
+      { package: "npm:openai", weight: 5, role: "helper", reason: "JS side." },
+    ]);
+    expect(out.map((a) => [a.ecosystem, a.reason])).toEqual([["pypi", "Python side."], ["npm", "JS side."]]);
+    expect(out[0]!.weightBp).toBeGreaterThan(out[1]!.weightBp * 5);
+  });
+
+  it("doesn't guess when a bare name matches more than one ecosystem", () => {
+    const rows = [row("openai", { ecosystem: "pypi" }), row("openai", { ecosystem: "npm" })];
+    const out = applyGuardrails(rows, [{ package: "openai", weight: 90, role: "foundation", reason: "Python side." }]);
+    expect(out.map((a) => a.reason)).not.toContain("Python side.");
+  });
+});
+
 describe("fallbackAllocations", () => {
   it("ranks by fixed score and halves tooling", () => {
     const out = fallbackAllocations([

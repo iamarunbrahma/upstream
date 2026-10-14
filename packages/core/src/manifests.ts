@@ -16,7 +16,9 @@ export function manifestType(filePath: string): "package.json" | "requirements" 
 }
 
 const NPM_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
-const NPM_FRAGMENT = /"(@?[a-z0-9][\w./-]*)"\s*:\s*"(?:[\^~<>=*]|\d|workspace:|npm:|latest|next)/gi;
+const NPM_FRAGMENT = /"(@?[a-z0-9][\w./-]*)"\s*:\s*"(?:[\^<>=*]|~(?!\/)|\d|latest|next)/gi;
+// Dependency specs that don't come from the public registry: workspace siblings, local paths, git, tarball URLs.
+const NON_REGISTRY_SPEC = /^(workspace:|file:|link:|portal:|npm:|git\+|git:|github:|gitlab:|bitbucket:|https?:|\.|\/|~\/)/;
 const REQ = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:[<>=!~;@].*)?$/;
 const POETRY_NON_DEPS = new Set([
   "name", "version", "description", "python", "readme", "license", "authors", "maintainers", "homepage",
@@ -24,8 +26,14 @@ const POETRY_NON_DEPS = new Set([
   "build-backend", "requires", "classifiers", "urls", "scripts",
 ]);
 
-/** name -> isDev for every dependency section, or null when `text` isn't a JSON object. */
-function npmDepsFromJson(text: string): Map<string, boolean> | null {
+function isRegistrySpec(spec: unknown): boolean {
+  if (typeof spec !== "string") return false;
+  const v = spec.trim();
+  return !NON_REGISTRY_SPEC.test(v) && !/^[\w.-]+\/[\w.-]+/.test(v); // "user/repo" is a GitHub shorthand
+}
+
+/** Registry dependencies (name -> isDev) and local ones (workspace, file, link, git), or null when `text` isn't a JSON object. */
+function npmDepsFromJson(text: string): { registry: Map<string, boolean>; local: Set<string> } | null {
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -33,14 +41,17 @@ function npmDepsFromJson(text: string): Map<string, boolean> | null {
     return null;
   }
   if (!json || typeof json !== "object" || Array.isArray(json)) return null;
-  const out = new Map<string, boolean>();
+  const registry = new Map<string, boolean>();
+  const local = new Set<string>();
   for (const section of NPM_SECTIONS) {
     const deps = (json as Record<string, unknown>)[section];
-    if (deps && typeof deps === "object") {
-      for (const name of Object.keys(deps)) out.set(name.toLowerCase(), section === "devDependencies");
+    if (!deps || typeof deps !== "object") continue;
+    for (const [name, spec] of Object.entries(deps)) {
+      if (isRegistrySpec(spec)) registry.set(name.toLowerCase(), section === "devDependencies");
+      else local.add(name.toLowerCase());
     }
   }
-  return out;
+  return { registry, local };
 }
 
 function npmFragmentNames(text: string): Set<string> {
@@ -48,6 +59,7 @@ function npmFragmentNames(text: string): Set<string> {
 }
 
 function reqName(spec: string): string | null {
+  if (/\s@\s|@\s*(file|git\+|https?):/i.test(spec)) return null; // PEP 508 direct reference, not the registry
   const m = spec.trim().match(REQ);
   return m?.[1] ? normalizePypiName(m[1]) : null;
 }
@@ -56,13 +68,13 @@ function quoted(s: string): string[] {
   return [...s.matchAll(/["']([^"']+)["']/g)].map((m) => m[1]!);
 }
 
-export function parsePackageJsonDeps(text: string): { deps: Set<string>; devDeps: Set<string> } | null {
+export function parsePackageJsonDeps(text: string): { deps: Set<string>; devDeps: Set<string>; local: Set<string> } | null {
   const all = npmDepsFromJson(text);
   if (!all) return null;
   const deps = new Set<string>();
   const devDeps = new Set<string>();
-  for (const [name, dev] of all) (dev ? devDeps : deps).add(name);
-  return { deps, devDeps };
+  for (const [name, dev] of all.registry) (dev ? devDeps : deps).add(name);
+  return { deps, devDeps, local: all.local };
 }
 
 export function parseRequirementNames(text: string): Set<string> {
@@ -126,7 +138,7 @@ export function parsePyprojectNames(text: string): Set<string> {
         if (n) out.add(n);
       }
       inArray = !value.replace(/["'][^"']*["']/g, "").includes("]");
-    } else if (poetryDep) {
+    } else if (poetryDep && !/\b(path|git|url)\s*=/.test(value)) {
       out.add(normalizePypiName(key));
     }
   }
@@ -139,8 +151,8 @@ export function manifestAdditions(filePath: string, added: string, removed: stri
   if (type === "package.json") {
     const now = npmDepsFromJson(added);
     if (now) {
-      const before = npmDepsFromJson(removed) ?? new Map<string, boolean>();
-      return [...now].filter(([n]) => !before.has(n)).map(([name, dev]) => ({ ecosystem: "npm" as const, name, dev }));
+      const before = npmDepsFromJson(removed)?.registry ?? new Map<string, boolean>();
+      return [...now.registry].filter(([n]) => !before.has(n)).map(([name, dev]) => ({ ecosystem: "npm" as const, name, dev }));
     }
     const before = npmFragmentNames(removed);
     return [...npmFragmentNames(added)].filter((n) => !before.has(n)).map((name) => ({ ecosystem: "npm" as const, name, dev: null }));

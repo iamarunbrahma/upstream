@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { buildEvidence, changesFromEvents, languageOf, parseTranscript, type FileChange, type ReceiptPayload } from "@upstream/core";
-import { readDiskManifests } from "./disk";
+import { readDiskManifestsFor } from "./disk";
 
 const MAX_FILE_BYTES = 512 * 1024;
 
@@ -21,7 +21,7 @@ export function evidenceFromTranscript(transcriptPath: string, jsonl: string, cw
   const t = parseTranscript(jsonl);
   const { changes, installs, docsUrls } = changesFromEvents(t.events);
   const withContent = changes.map((c) => ({ ...c, fullContent: readSmallFile(c.filePath) }));
-  const built = buildEvidence({ changes: withContent, installs, docsUrls, disk: readDiskManifests(cwd) });
+  const built = buildEvidence({ changes: withContent, installs, docsUrls, disk: readDiskManifestsFor(cwd, changes.map((c) => c.filePath)) });
   return {
     sessionId: t.sessionId ?? basename(transcriptPath, ".jsonl"),
     agent: "claude-code",
@@ -60,7 +60,7 @@ export function evidenceFromGitDiff(range: string, cwd: string, now: Date = new 
     ...c,
     fullContent: readSmallFile(isAbsolute(c.filePath) ? c.filePath : join(top, c.filePath)),
   }));
-  const built = buildEvidence({ changes, installs: [], docsUrls: [], disk: readDiskManifests(top) });
+  const built = buildEvidence({ changes, installs: [], docsUrls: [], disk: readDiskManifestsFor(top, changes.map((c) => c.filePath)) });
   const ids = range.split(/\.{2,3}/).filter(Boolean).map((ref) => git("rev-parse", "--short=12", ref).trim());
   const id = ids.length ? ids.join("..") : createHash("sha256").update(diff).digest("hex").slice(0, 12);
   return {

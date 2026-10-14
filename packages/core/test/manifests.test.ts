@@ -35,6 +35,22 @@ describe("manifestAdditions", () => {
     expect(manifestAdditions("pyproject.toml", added, "").map((a) => a.name)).toEqual(["fastapi", "httpx", "requests"]);
   });
 
+  it("leaves workspace, file, link, git and path dependencies out", () => {
+    const added = JSON.stringify({
+      dependencies: { "@repo/ui": "workspace:*", local: "file:../local", linked: "link:../x", gitdep: "git+https://github.com/a/b.git", gh: "a/b", zod: "^4" },
+    });
+    expect(manifestAdditions("/r/package.json", added, "").map((a) => a.name)).toEqual(["zod"]);
+    expect(manifestAdditions("/r/package.json", '"@repo/ui": "workspace:*",\n"zod": "^4"', "").map((a) => a.name)).toEqual(["zod"]);
+    expect([...parsePyprojectNames('[tool.poetry.dependencies]\nmylib = { path = "../mylib", develop = true }\nrequests = "^2"\n')]).toEqual(["requests"]);
+    expect([...parsePyprojectNames('dependencies = ["mypkg @ file:///home/me/mypkg", "httpx"]\n')]).toEqual(["httpx"]);
+    expect([...parseRequirementNames("mypkg @ file:///home/me/mypkg\n-e ./local\nhttpx\n")]).toEqual(["httpx"]);
+  });
+
+  it("reports local dependency names so they can be excluded", () => {
+    const parsed = parsePackageJsonDeps(JSON.stringify({ dependencies: { "@repo/ui": "workspace:*", zod: "^4" }, devDependencies: { tools: "file:./tools" } }));
+    expect(parsed).toEqual({ deps: new Set(["zod"]), devDeps: new Set(), local: new Set(["@repo/ui", "tools"]) });
+  });
+
   it("ignores files that aren't manifests", () => {
     expect(manifestAdditions("README.md", '"zod": "^4"', "")).toEqual([]);
   });
@@ -43,7 +59,7 @@ describe("manifestAdditions", () => {
 describe("disk parsers", () => {
   it("parses package.json dependency sections", () => {
     const parsed = parsePackageJsonDeps(JSON.stringify({ dependencies: { Next: "1" }, devDependencies: { vitest: "5" } }));
-    expect(parsed).toEqual({ deps: new Set(["next"]), devDeps: new Set(["vitest"]) });
+    expect(parsed).toEqual({ deps: new Set(["next"]), devDeps: new Set(["vitest"]), local: new Set() });
     expect(parsePackageJsonDeps("not json")).toBeNull();
   });
 

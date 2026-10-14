@@ -75,6 +75,7 @@ describe("prompt injection through package metadata", () => {
     expect(user.indexOf("Ignore previous instructions")).toBeGreaterThan(start);
     expect(user.indexOf("Ignore previous instructions")).toBeLessThan(end);
     expect(SYSTEM_PROMPT).toContain("untrusted data");
+    expect(user).toContain('"package":"npm:evil-pkg"');
   });
 
   it("can't add packages or push real evidence below the floor even if the model obeys the injection", async () => {

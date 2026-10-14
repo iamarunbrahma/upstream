@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ReceiptPayload } from "@upstream/core";
@@ -28,6 +28,24 @@ describe("evidenceFromTranscript", () => {
     const payload = evidenceFromTranscript("/x/abc-123.jsonl", "", "/nonexistent");
     expect(payload.sessionId).toBe("abc-123");
     expect(payload.packages).toEqual([]);
+  });
+});
+
+describe("evidenceFromTranscript in a repo with nested manifests", () => {
+  it("credits packages declared next to the changed files and leaves workspace packages out", () => {
+    const root = mkdtempSync(join(tmpdir(), "upstream-mono-"));
+    mkdirSync(join(root, "frontend", "src"), { recursive: true });
+    mkdirSync(join(root, "backend"), { recursive: true });
+    writeFileSync(join(root, "frontend", "package.json"), JSON.stringify({ name: "frontend", dependencies: { react: "19", "@repo/ui": "workspace:*" } }));
+    writeFileSync(join(root, "backend", "requirements.txt"), "fastapi\n");
+    const write = (id: string, file: string, content: string) =>
+      JSON.stringify({ type: "assistant", sessionId: "m", message: { content: [{ type: "tool_use", id, name: "Write", input: { file_path: file, content } }] } });
+    const jsonl = [
+      write("1", join(root, "frontend", "src", "App.tsx"), 'import { useState } from "react";\nimport { Button } from "@repo/ui";\nconst [a] = useState(0);\n'),
+      write("2", join(root, "backend", "main.py"), "from fastapi import FastAPI\napp = FastAPI()\n"),
+    ].join("\n");
+    const payload = evidenceFromTranscript("/x/m.jsonl", jsonl, root);
+    expect(payload.packages.map((p) => `${p.ecosystem}:${p.name}`)).toEqual(["npm:react", "pypi:fastapi"]);
   });
 });
 

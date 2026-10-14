@@ -61,3 +61,28 @@ describe("name helpers", () => {
     expect(npmNameFromSpec("git+https://github.com/a/b.git")).toBeNull();
   });
 });
+
+describe("shell noise around installs", () => {
+  it("ignores redirections, so '2>&1 | tail' never becomes a package", () => {
+    expect(parseInstallCommands("npm install zod 2>&1 | tail -20")).toEqual([{ ecosystem: "npm", name: "zod", dev: false }]);
+    expect(parseInstallCommands("pip install fastapi uvicorn 2>&1 | tail -5")).toEqual([
+      { ecosystem: "pypi", name: "fastapi", dev: false },
+      { ecosystem: "pypi", name: "uvicorn", dev: false },
+    ]);
+    expect(parseInstallCommands("npm i zod 1>/dev/null")).toEqual([{ ecosystem: "npm", name: "zod", dev: false }]);
+    expect(parseInstallCommands("npm i zod > install.log 2> err.log")).toEqual([{ ecosystem: "npm", name: "zod", dev: false }]);
+  });
+
+  it("skips values of flags that take one, GitHub shorthands and tarballs", () => {
+    expect(parseInstallCommands("npm i --tag beta foo")).toEqual([{ ecosystem: "npm", name: "foo", dev: false }]);
+    expect(parseInstallCommands("npm i --loglevel error --omit dev foo")).toEqual([{ ecosystem: "npm", name: "foo", dev: false }]);
+    expect(parseInstallCommands("npm i expressjs/express ./pkg.tgz foo.tgz")).toEqual([]);
+    expect(parseInstallCommands("uv add --optional cli rich")).toEqual([{ ecosystem: "pypi", name: "rich", dev: false }]);
+  });
+
+  it("reads pnpm workspace forms and skips workspace protocol specs", () => {
+    expect(parseInstallCommands("pnpm --filter web add zod")).toEqual([{ ecosystem: "npm", name: "zod", dev: false }]);
+    expect(parseInstallCommands("pnpm add -w zod")).toEqual([{ ecosystem: "npm", name: "zod", dev: false }]);
+    expect(parseInstallCommands("pnpm add @repo/ui@workspace:* lodash")).toEqual([{ ecosystem: "npm", name: "lodash", dev: false }]);
+  });
+});

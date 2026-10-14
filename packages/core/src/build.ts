@@ -163,6 +163,8 @@ export function buildEvidence(input: EvidenceInput): BuiltEvidence {
     const newImports = findImports(ch.filePath, ch.added);
     remember(ch.filePath, newImports);
     for (const hit of newImports) get(hit.ecosystem, hit.name).importFiles.add(ch.filePath);
+    // A file the agent edited counts for every package it imports, even if the import line itself is old.
+    if (ch.fullContent) for (const hit of findImports(ch.filePath, ch.fullContent)) get(hit.ecosystem, hit.name).importFiles.add(ch.filePath);
     for (const { hit, locals } of localsByFile.get(ch.filePath)?.values() ?? []) {
       const n = countUsageLines(ch.added, locals, lang);
       if (n > 0) get(hit.ecosystem, hit.name).usageLines += n;
