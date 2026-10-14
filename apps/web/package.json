@@ -9,7 +9,8 @@
     "start": "next start",
     "db:generate": "drizzle-kit generate",
     "models": "node --env-file=.env.local --import tsx scripts/gemini-models.ts",
-    "eval:live": "node --env-file=.env.local --import tsx scripts/eval-live.ts"
+    "eval:live": "node --env-file=.env.local --import tsx scripts/eval-live.ts",
+    "paypal:setup": "node --env-file=.env.local --import tsx scripts/paypal-setup.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.9",
