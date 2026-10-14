@@ -7,8 +7,8 @@ export interface Config {
   token: string | null;
 }
 
-/** Local dev server until Plan 3 deploys the hosted one; then this becomes the Render URL. */
-export const DEFAULT_API_URL = "http://localhost:3000";
+/** The hosted Upstream on Render. Set UPSTREAM_API_URL to use a local dev server instead. */
+export const DEFAULT_API_URL = "https://upstream-0s2y.onrender.com";
 
 export function configDir(): string {
   return process.env.UPSTREAM_CONFIG_DIR ?? join(homedir(), ".config", "upstream");
