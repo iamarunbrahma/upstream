@@ -6,7 +6,7 @@ import { formatUsd } from "../../lib/format";
 import { recordPayment } from "./record-payment";
 
 interface Me {
-  fundedCents: number;
+  balanceCents: number;
   subscription: { id: string; tier: string; status: string } | null;
   autoApprove: boolean;
   receipts: { proposed: number; approved: number; skipped: number };
@@ -78,7 +78,7 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
   return (
     <div>
       <p style={{ fontSize: 32, margin: "8px 0" }}>
-        {formatUsd(me.fundedCents)} <span style={{ fontSize: 16, color: "#555" }}>in your budget</span>
+        {formatUsd(me.balanceCents)} <span style={{ fontSize: 16, color: "#555" }}>in your budget</span>
       </p>
       {notice && <p role="status">{notice}</p>}
       {pending && (

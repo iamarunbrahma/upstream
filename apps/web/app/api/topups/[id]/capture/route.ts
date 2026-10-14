@@ -1,4 +1,4 @@
-import { fundedCents } from "../../../../../lib/funding/ledger";
+import { balanceCents } from "../../../../../lib/funding/ledger";
 import { withFunding } from "../../../../../lib/funding/route";
 import { completeTopup } from "../../../../../lib/funding/topups";
 import { json } from "../../../../../lib/http";
@@ -9,6 +9,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   return withFunding(req, async (deps, accountId) => {
     const credited = await completeTopup(deps, accountId, id);
-    return json({ credited, fundedCents: await fundedCents(deps.db, accountId) });
+    return json({ credited, balanceCents: await balanceCents(deps.db, accountId) });
   });
 }

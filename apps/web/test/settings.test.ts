@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDevice } from "../lib/auth";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
-import { subscriptions } from "../lib/db/schema";
+import { accruals, settlements, subscriptions } from "../lib/db/schema";
 import { recordFunding } from "../lib/funding/ledger";
 import { getSettings, setAutoApprove } from "../lib/funding/settings";
 import { submitReceipt, type Deps } from "../lib/receipts/service";
@@ -20,6 +20,12 @@ beforeEach(async () => {
   h.deps = { db, http: fakeRegistry, model: null };
 });
 
+/** A settlement set `cents` of this funder's budget aside for a maintainer. */
+async function setAside(accountId: string, cents: number) {
+  const [s] = await h.deps.db.insert(settlements).values({}).returning();
+  await h.deps.db.insert(accruals).values({ settlementId: s!.id, funderId: accountId, login: "alice", ecosystem: "pypi", name: "fastapi", cents });
+}
+
 const fund = (accountId: string, cents: number) =>
   recordFunding(h.deps.db, { accountId, source: "topup", paypalId: `CAP-${accountId}`, amountCents: cents, payerId: null, occurredAt: new Date(), raw: null });
 
@@ -33,6 +39,14 @@ describe("auto-approve", () => {
   it("waits while the budget is empty, even when it's on", async () => {
     const { accountId } = await createDevice(h.deps.db, null);
     await setAutoApprove(h.deps.db, accountId, true);
+    expect((await submitReceipt(h.deps, accountId, payload())).view.status).toBe("proposed");
+  });
+
+  it("waits once a settlement has set the whole budget aside", async () => {
+    const { accountId } = await createDevice(h.deps.db, null);
+    await setAutoApprove(h.deps.db, accountId, true);
+    await fund(accountId, 500);
+    await setAside(accountId, 500);
     expect((await submitReceipt(h.deps, accountId, payload())).view.status).toBe("proposed");
   });
 
@@ -52,12 +66,20 @@ describe("dashboard API", () => {
     await submitReceipt(h.deps, accountId, payload());
     const res = await getMe(new Request("http://up.test/api/me", { headers: { authorization: `Bearer ${token}` } }));
     expect(await res.json()).toEqual({
-      fundedCents: 916,
+      balanceCents: 916,
       subscription: null,
       autoApprove: false,
       receipts: { proposed: 1, approved: 0, skipped: 0 },
       paymentsReady: false,
     });
+  });
+
+  it("shows the budget left after what settlements set aside for maintainers", async () => {
+    const { accountId, token } = await createDevice(h.deps.db, null);
+    await fund(accountId, 1000);
+    await setAside(accountId, 400);
+    const res = await getMe(new Request("http://up.test/api/me", { headers: { authorization: `Bearer ${token}` } }));
+    expect(((await res.json()) as { balanceCents: number }).balanceCents).toBe(600);
   });
 
   it("shows the active subscription even when an abandoned one changed more recently", async () => {

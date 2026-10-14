@@ -106,7 +106,7 @@ describe("subscription routes", () => {
     const params = { params: Promise.resolve({ id: subscriptionId }) };
     expect((await postReconcile(post(`/api/subscriptions/${subscriptionId}/reconcile`, other.token), params)).status).toBe(404);
     const ok = await postReconcile(post(`/api/subscriptions/${subscriptionId}/reconcile`, owner.token), params);
-    expect(await ok.json()).toEqual({ status: "ACTIVE", credited: 453, fundedCents: 453 });
+    expect(await ok.json()).toEqual({ status: "ACTIVE", credited: 453, balanceCents: 453 });
     expect((await postSubscription(post("/api/subscriptions", owner.token, { tier: "gold" }))).status).toBe(400);
   });
 });

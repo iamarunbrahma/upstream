@@ -36,6 +36,8 @@ export const receipts = pgTable(
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** The settlement that spent this receipt's share of the budget; null until then. */
+    settlementId: uuid("settlement_id").references(() => settlements.id),
   },
   (t) => [uniqueIndex("receipts_account_session").on(t.accountId, t.sessionId)],
 );
@@ -99,7 +101,9 @@ export const fundingEvents = pgTable(
   {
     paypalId: text("paypal_id").primaryKey(),
     accountId: uuid("account_id").notNull().references(() => accounts.id),
-    source: text("source", { enum: ["subscription", "topup"] }).notNull(),
+    source: text("source", { enum: ["subscription", "topup", "refund"] }).notNull(),
+    /** Refunds and reversals only: the sale or capture id they take money back from. Their amount is negative. */
+    refundOf: text("refund_of"),
     amountCents: integer("amount_cents").notNull(),
     payerId: text("payer_id"),
     occurredAt: timestamp("occurred_at", tz).notNull(),
@@ -121,3 +125,72 @@ export const accountSettings = pgTable("account_settings", {
   autoApprove: boolean("auto_approve").notNull().default(false),
   updatedAt: timestamp("updated_at", tz).notNull().defaultNow(),
 });
+
+/** A GitHub account that can receive money. Plan 2c's sign-in sets `paypalPayerId` and `claimedAt`. */
+export const maintainers = pgTable("maintainers", {
+  login: text("login").primaryKey(),
+  githubId: integer("github_id"),
+  paypalPayerId: text("paypal_payer_id").unique(),
+  claimedAt: timestamp("claimed_at", tz),
+  createdAt: createdAt(),
+});
+
+export interface RepoRecipients {
+  source: "funding" | "committers" | "none";
+  /** GitHub logins with their share in basis points; the shares add up to 10000, or the list is empty. */
+  recipients: Array<{ login: string; shareBp: number }>;
+}
+
+export const recipientCache = pgTable("recipient_cache", {
+  repo: text("repo").primaryKey(),
+  data: jsonb("data").$type<RepoRecipients>().notNull(),
+  fetchedAt: timestamp("fetched_at", tz).notNull(),
+});
+
+/** One run of the settlement job. Its id is also the Payouts `sender_batch_id`, so a batch is sent once. */
+export const settlements = pgTable("settlements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdAt: createdAt(),
+  payoutBatchId: text("payout_batch_id"),
+  batchStatus: text("batch_status"),
+});
+
+/** One line of a Payouts batch: everything one maintainer is owed in that run. Its id is the `sender_item_id`. */
+export const payoutItems = pgTable(
+  "payout_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    settlementId: uuid("settlement_id").notNull().references(() => settlements.id),
+    login: text("login").notNull(),
+    payerId: text("payer_id").notNull(),
+    cents: integer("cents").notNull(),
+    paypalItemId: text("paypal_item_id"),
+    status: text("status").notNull().default("PENDING"),
+    feeCents: integer("fee_cents"),
+    updatedAt: timestamp("updated_at", tz).notNull().defaultNow(),
+  },
+  (t) => [index("payout_items_settlement").on(t.settlementId)],
+);
+
+/**
+ * Money a settlement set aside from one funder for one maintainer, for one package.
+ * held: waiting (not claimed yet, in the first-payout hold, or under $1 in total)
+ * queued: on a Payouts line; paid: PayPal confirmed it; returned: back in the funder's budget.
+ */
+export const accruals = pgTable(
+  "accruals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    settlementId: uuid("settlement_id").notNull().references(() => settlements.id),
+    funderId: uuid("funder_id").notNull().references(() => accounts.id),
+    login: text("login").notNull(),
+    ecosystem: text("ecosystem", { enum: ["npm", "pypi"] }).notNull(),
+    name: text("name").notNull(),
+    cents: integer("cents").notNull(),
+    status: text("status", { enum: ["held", "queued", "paid", "returned"] }).notNull().default("held"),
+    returnReason: text("return_reason", { enum: ["unclaimed", "same-person", "refunded"] }),
+    payoutItemId: uuid("payout_item_id").references(() => payoutItems.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index("accruals_funder").on(t.funderId), index("accruals_login_status").on(t.login, t.status)],
+);

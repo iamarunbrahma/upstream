@@ -1,6 +1,6 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { receipts, subscriptions } from "../../../lib/db/schema";
-import { fundedCents } from "../../../lib/funding/ledger";
+import { balanceCents } from "../../../lib/funding/ledger";
 import { getSettings } from "../../../lib/funding/settings";
 import { json, withAccount } from "../../../lib/http";
 
@@ -21,7 +21,7 @@ export async function GET(req: Request): Promise<Response> {
       .where(eq(receipts.accountId, accountId))
       .groupBy(receipts.status);
     return json({
-      fundedCents: await fundedCents(deps.db, accountId),
+      balanceCents: await balanceCents(deps.db, accountId),
       subscription: subscription ?? null,
       autoApprove: (await getSettings(deps.db, accountId)).autoApprove,
       receipts: { proposed: 0, approved: 0, skipped: 0, ...Object.fromEntries(counts.map((c) => [c.status, Number(c.n)])) },
