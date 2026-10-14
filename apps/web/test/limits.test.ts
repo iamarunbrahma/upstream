@@ -31,6 +31,15 @@ describe("createRateLimiter under a flood", () => {
   });
 });
 
+describe("createRateLimiter cost", () => {
+  it("handles a flood of new keys in constant time per call", () => {
+    const lim = createRateLimiter({ limit: 1, windowMs: 60_000, maxKeys: 2000, now: () => 0 });
+    const start = performance.now();
+    for (let i = 0; i < 200_000; i++) lim.take(`k${i}`);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+});
+
 describe("clientKey", () => {
   const withXff = (xff: string) => new Request("http://x", { headers: { "x-forwarded-for": xff } });
 
