@@ -1,5 +1,6 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { receipts, subscriptions } from "../../../lib/db/schema";
+import { isDemoAccount } from "../../../lib/demo/accounts";
 import { balanceCents, givenCents } from "../../../lib/funding/ledger";
 import { getSettings } from "../../../lib/funding/settings";
 import { json, withAccount } from "../../../lib/http";
@@ -27,6 +28,7 @@ export async function GET(req: Request): Promise<Response> {
       autoApprove: (await getSettings(deps.db, accountId)).autoApprove,
       receipts: { proposed: 0, approved: 0, skipped: 0, ...Object.fromEntries(counts.map((c) => [c.status, Number(c.n)])) },
       paymentsReady: Boolean(deps.paypal),
+      demo: await isDemoAccount(deps.db, accountId),
     });
   });
 }

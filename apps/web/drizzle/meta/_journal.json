@@ -50,6 +50,13 @@
       "when": 1791981200439,
       "tag": "0006_furry_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791986117972,
+      "tag": "0007_high_fantastic_four",
+      "breakpoints": true
     }
   ]
 }

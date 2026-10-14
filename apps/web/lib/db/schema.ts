@@ -7,6 +7,8 @@ const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull(
 
 export const accounts = pgTable("accounts", {
   id: uuid("id").primaryKey().defaultRandom(),
+  /** Made by "Try the demo" on the hosted sandbox demo; only these get the sample session and "Settle now". */
+  demo: boolean("demo").notNull().default(false),
   createdAt: createdAt(),
 });
 

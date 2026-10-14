@@ -72,6 +72,7 @@ describe("dashboard API", () => {
       autoApprove: false,
       receipts: { proposed: 1, approved: 0, skipped: 0 },
       paymentsReady: false,
+      demo: false,
     });
   });
 

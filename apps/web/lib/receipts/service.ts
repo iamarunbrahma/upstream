@@ -24,6 +24,8 @@ export interface Deps {
   deviceLimiter?: RateLimiter;
   /** Per-client cap on starting a maintainer sign-in or PayPal link. */
   signInLimiter?: RateLimiter;
+  /** Per-client cap on "Try the demo" accounts. */
+  demoStartLimiter?: RateLimiter;
   /** PayPal REST client; null when the server has no PayPal credentials. */
   paypal?: PayPalApi | null;
   planIds?: Partial<Record<TierKey, string>>;
