@@ -1,0 +1,8 @@
+{"type":"user","sessionId":"sess-1","message":{"role":"user","content":"secret prompt text that must never be read"}}
+{"type":"ai-title","aiTitle":"Build a todo API","sessionId":"sess-1"}
+{"type":"assistant","sessionId":"sess-1","message":{"role":"assistant","content":[{"type":"text","text":"Installing deps"},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cd api && pip install \"fastapi[standard]>=0.1\" pydantic && npm i -D vitest@5","description":"install"}}]}}
+{"type":"assistant","sessionId":"sess-1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Write","input":{"file_path":"/repo/api/main.py","content":"from fastapi import FastAPI\nfrom pydantic import BaseModel\n\napp = FastAPI()\n"}}]}}
+{"type":"assistant","sessionId":"sess-1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t3","name":"Edit","input":{"file_path":"/repo/api/main.py","old_string":"app = FastAPI()","new_string":"app = FastAPI()\n\nclass Todo(BaseModel):\n    title: str","replace_all":false}}]}}
+{"type":"assistant","sessionId":"sess-1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t4","name":"WebFetch","input":{"url":"https://fastapi.tiangolo.com/tutorial/body/","prompt":"how to declare a body"}}]}}
+not json at all
+{"type":"ai-title","aiTitle":"Build a todo API with FastAPI","sessionId":"sess-1"}
