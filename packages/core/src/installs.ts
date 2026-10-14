@@ -69,12 +69,16 @@ function poetryIsDev(args: string[]): boolean {
 }
 
 function parseSegment(t: string[]): InstallHit[] {
-  const [a, b, c, d] = t;
+  // Match the program's base name, so ".venv/bin/pip" and "/usr/local/bin/python3.12" count too.
+  const a = (t[0] ?? "").split("/").pop() ?? "";
+  const [, b, c, d] = t;
+  const isPip = /^pip(3(\.\d+)?)?$/.test(a);
+  const isPython = /^python(3(\.\d+)?)?$/.test(a);
   if (a === "npm" && (b === "install" || b === "i" || b === "add")) return npmArgs(t.slice(2));
   if ((a === "pnpm" || a === "bun") && (b === "add" || b === "install" || b === "i")) return npmArgs(t.slice(2));
   if (a === "yarn" && b === "add") return npmArgs(t.slice(2));
-  if ((a === "pip" || a === "pip3") && b === "install") return pipArgs(t.slice(2), false);
-  if ((a === "python" || a === "python3") && b === "-m" && c === "pip" && d === "install") return pipArgs(t.slice(4), false);
+  if (isPip && b === "install") return pipArgs(t.slice(2), false);
+  if (isPython && b === "-m" && c === "pip" && d === "install") return pipArgs(t.slice(4), false);
   if (a === "uv" && b === "pip" && c === "install") return pipArgs(t.slice(3), false);
   if (a === "uv" && b === "add") return pipArgs(t.slice(2), t.includes("--dev"));
   if (a === "poetry" && b === "add") return pipArgs(t.slice(2), poetryIsDev(t));

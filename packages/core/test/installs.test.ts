@@ -32,6 +32,15 @@ describe("parseInstallCommands", () => {
     expect(parseInstallCommands("poetry add --group dev ruff")).toEqual([{ ecosystem: "pypi", name: "ruff", dev: true }]);
   });
 
+  it("recognises pip, python and npm called by path, as in a virtualenv", () => {
+    expect(parseInstallCommands("python3 -m venv .venv && .venv/bin/pip install fastapi uvicorn")).toEqual([
+      { ecosystem: "pypi", name: "fastapi", dev: false },
+      { ecosystem: "pypi", name: "uvicorn", dev: false },
+    ]);
+    expect(parseInstallCommands("/usr/local/bin/python3.12 -m pip install httpx")).toEqual([{ ecosystem: "pypi", name: "httpx", dev: false }]);
+    expect(parseInstallCommands("./node_modules/.bin/pnpm add zod")).toEqual([{ ecosystem: "npm", name: "zod", dev: false }]);
+  });
+
   it("strips sudo and env assignments and dedupes", () => {
     expect(parseInstallCommands("sudo CI=1 yarn add react react-dom react")).toEqual([
       { ecosystem: "npm", name: "react", dev: false },
