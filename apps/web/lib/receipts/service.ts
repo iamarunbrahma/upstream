@@ -9,6 +9,7 @@ import { RateLimitError, type RateLimiter } from "../limits";
 import type { PayPalApi } from "../paypal/api";
 import type { TierKey } from "../paypal/plans";
 import type { HttpGetJson } from "../resolver/registry";
+import { shouldAutoApprove } from "../funding/settings";
 import { toView } from "./view";
 
 export interface Deps {
@@ -127,6 +128,7 @@ export async function submitReceipt(
     const frozen = (await findBySession(deps.db, accountId, payload.sessionId))!;
     return { view: (await loadView(deps.db, accountId, frozen.id))!, changed: false };
   }
+  if (await shouldAutoApprove(deps.db, accountId)) await decideReceipt(deps, accountId, id, "approve");
   return { view: (await loadView(deps.db, accountId, id))!, changed: true };
 }
 
