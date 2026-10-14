@@ -56,8 +56,11 @@ describe("settlementDeps", () => {
     const deps = settlementDeps({ db, http, model: null, paypal: new FakePayPal() } as unknown as Deps & { paypal: FakePayPal }, gh);
     const repo = await deps.repoFor("pypi", "widget");
     expect(repo).toEqual({ owner: "acme", name: "widget" });
-    expect(await deps.recipients(repo!)).toEqual({ source: "committers", recipients: [{ login: "alice", shareBp: 10_000 }] });
+    if (!repo || repo === "later") throw new Error("expected a repo");
+    expect(await deps.recipients(repo)).toEqual({ source: "committers", recipients: [{ login: "alice", shareBp: 10_000 }] });
     expect(await deps.repoFor("pypi", "missing")).toBeNull();
+    const down = settlementDeps({ db, http: async () => ({ status: 503, body: null }), model: null, paypal: new FakePayPal() } as unknown as Deps & { paypal: FakePayPal }, gh);
+    expect(await down.repoFor("pypi", "never-seen")).toBe("later");
   });
 });
 

@@ -21,12 +21,15 @@ export async function settlementWorld() {
     "npm:a": { source: "funding", recipients: [{ login: "alice", shareBp: 5000 }, { login: "bob", shareBp: 5000 }] },
     "npm:b": { source: "committers", recipients: [{ login: "carol", shareBp: 10_000 }] },
   };
+  /** Packages whose registry can't be reached right now. */
+  const registryDown = new Set<string>();
   let clock = NOW;
   let seq = 0;
   const deps = {
     db,
     paypal,
-    repoFor: async (ecosystem: string, name: string) => (lookups[`${ecosystem}:${name}`] === null ? null : { owner: ecosystem, name }),
+    repoFor: async (ecosystem: string, name: string) =>
+      registryDown.has(`${ecosystem}:${name}`) ? ("later" as const) : lookups[`${ecosystem}:${name}`] === null ? null : { owner: ecosystem, name },
     recipients: async (repo: { owner: string; name: string }) => lookups[`${repo.owner}:${repo.name}`] ?? { source: "none" as const, recipients: [] },
     now: () => clock,
   };
@@ -38,6 +41,7 @@ export async function settlementWorld() {
     db,
     paypal,
     lookups,
+    registryDown,
     deps,
     fund,
     /** Move the clock to `days` after NOW. */

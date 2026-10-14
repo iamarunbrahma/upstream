@@ -1,7 +1,7 @@
 import type { PayPalApi } from "../paypal/api";
 import { formatUsd } from "../format";
 import type { Deps } from "../receipts/service";
-import { resolveWithCache } from "../resolver/cache";
+import { lookupPackage } from "../resolver/cache";
 import { recipientsFor, type GithubGet } from "../resolver/recipients";
 import { reconcilePayouts } from "./payout-status";
 import { payOut, type PayoutDeps, type SendResult } from "./payouts";
@@ -21,7 +21,10 @@ export function settlementDeps(deps: Deps & { paypal: PayPalApi }, gh: GithubGet
     db: deps.db,
     paypal: deps.paypal,
     now: clock,
-    repoFor: async (ecosystem, name) => (await resolveWithCache(deps.db, ecosystem, name, deps.http, clock())).repo,
+    repoFor: async (ecosystem, name) => {
+      const pkg = await lookupPackage(deps.db, ecosystem, name, deps.http, clock());
+      return pkg === "later" ? "later" : pkg.repo;
+    },
     recipients: (repo) => recipientsFor(deps.db, gh, repo, clock()),
   };
 }

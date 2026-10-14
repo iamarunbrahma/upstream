@@ -3,7 +3,7 @@ import { accountForToken, bearerToken, createDevice, hashToken, newToken } from 
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
 import { packageCache } from "../lib/db/schema";
-import { CACHE_TTL_MS, resolveWithCache } from "../lib/resolver/cache";
+import { CACHE_TTL_MS, lookupPackage, resolveWithCache } from "../lib/resolver/cache";
 import type { HttpGetJson } from "../lib/resolver/registry";
 
 async function freshDb() {
@@ -58,6 +58,13 @@ describe("resolveWithCache", () => {
     const { http, state } = counting(zod.status, zod.body);
     expect((await resolveWithCache(db, "npm", "zod", http)).description).toBe("schema validation");
     expect(state.calls).toBe(1);
+  });
+
+  it("says to try later when the registry fails and nothing is cached, instead of calling the package unknown", async () => {
+    const db = await freshDb();
+    expect(await lookupPackage(db, "npm", "zod", counting(503, null).http)).toBe("later");
+    await resolveWithCache(db, "npm", "zod", counting(zod.status, zod.body).http);
+    expect(await lookupPackage(db, "npm", "zod", counting(503, null).http, new Date(Date.now() + CACHE_TTL_MS + 1))).toMatchObject({ found: true });
   });
 
   it("does not cache server errors and returns not-found meanwhile", async () => {

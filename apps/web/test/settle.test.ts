@@ -56,6 +56,17 @@ describe("settle", () => {
     expect(await w.owed(f)).toEqual({ alice: 125, bob: 125, carol: 250 });
   });
 
+  it("waits for the package registry instead of guessing when it can't be reached", async () => {
+    w.registryDown.add("npm:b");
+    const f = await w.funder(500);
+    const r = await w.receipt(f, { a: 5000, b: 5000 });
+    expect(await settle(w.deps)).toMatchObject({ settledFunders: 0, waitingFunders: 1 });
+    expect(await settledBy(r)).toBeNull();
+    w.registryDown.clear();
+    await settle(w.deps);
+    expect(await w.owed(f)).toEqual({ alice: 125, bob: 125, carol: 250 });
+  });
+
   it("waits for money: approved receipts with an empty budget are settled once money arrives", async () => {
     const f = await w.funder(0);
     const r = await w.receipt(f, { b: 10_000 });

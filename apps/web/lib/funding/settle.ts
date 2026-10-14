@@ -16,8 +16,8 @@ export const MONTHLY_CAP_CENTS = 10_000;
 
 export interface SettleDeps {
   db: Db;
-  /** The package's GitHub repo, or null when it has none (Plan 1's cached registry lookup). */
-  repoFor: (ecosystem: Ecosystem, name: string) => Promise<RepoRef | null>;
+  /** The package's GitHub repo, null when it has none, or "later" while its registry can't be reached. */
+  repoFor: (ecosystem: Ecosystem, name: string) => Promise<RepoRef | null | "later">;
   /** Who gets the repo's share, or "later" while GitHub is rate-limiting (cached GitHub lookup). */
   recipients: (repo: RepoRef) => Promise<RepoRecipients | "later">;
   now?: () => Date;
@@ -46,7 +46,7 @@ async function lookUpPackages(deps: SettleDeps): Promise<Map<string, Lookup>> {
   const found = new Map<string, Lookup>();
   for (const p of pkgs) {
     const repo = await deps.repoFor(p.ecosystem, p.name);
-    found.set(keyOf(p.ecosystem, p.name), repo ? await deps.recipients(repo) : null);
+    found.set(keyOf(p.ecosystem, p.name), repo === "later" ? "later" : repo ? await deps.recipients(repo) : null);
   }
   return found;
 }

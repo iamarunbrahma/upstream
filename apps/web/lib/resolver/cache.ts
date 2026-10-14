@@ -16,6 +16,21 @@ export async function resolveWithCache(
   http: HttpGetJson,
   now: Date = new Date(),
 ): Promise<ResolvedPackage> {
+  const found = await lookupPackage(db, ecosystem, name, http, now);
+  return found === "later" ? notFound(ecosystem, name) : found;
+}
+
+/**
+ * Like resolveWithCache, but when the registry fails and nothing is cached it answers "later" instead of
+ * not-found. Settlement uses it, so an outage makes a funder wait rather than leaving a package unpaid.
+ */
+export async function lookupPackage(
+  db: Db,
+  ecosystem: Ecosystem,
+  name: string,
+  http: HttpGetJson,
+  now: Date = new Date(),
+): Promise<ResolvedPackage | "later"> {
   const key = `v${LOOKUP_VERSION}:${ecosystem}:${name}`;
   const [row] = await db.select().from(packageCache).where(eq(packageCache.key, key)).limit(1);
   if (row && now.getTime() - row.fetchedAt.getTime() < CACHE_TTL_MS) return row.data;
@@ -27,6 +42,6 @@ export async function resolveWithCache(
       .onConflictDoUpdate({ target: packageCache.key, set: { data: pkg, fetchedAt: now } });
     return pkg;
   } catch {
-    return row ? row.data : notFound(ecosystem, name);
+    return row ? row.data : "later";
   }
 }
