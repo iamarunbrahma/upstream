@@ -44,9 +44,21 @@ export function createPayPalHttp(cfg: PayPalConfig): PayPalHttp {
   const timeout = () => AbortSignal.timeout(cfg.timeoutMs ?? 20000);
   let token: { value: string; expiresAt: number } | null = null;
 
+  /** fetch, with a timeout or a dropped connection raised as a PayPalError like any other PayPal failure. */
+  async function send(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await fetchImpl(url, init);
+    } catch (e) {
+      if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+        throw new PayPalError(504, "TIMEOUT", "PayPal took too long to answer", null);
+      }
+      throw new PayPalError(502, "NETWORK_ERROR", "Couldn't reach PayPal", null);
+    }
+  }
+
   async function accessToken(): Promise<string> {
     if (token && now() < token.expiresAt) return token.value;
-    const res = await fetchImpl(`${cfg.baseUrl}/v1/oauth2/token`, {
+    const res = await send(`${cfg.baseUrl}/v1/oauth2/token`, {
       method: "POST",
       headers: {
         authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")}`,
@@ -72,7 +84,7 @@ export function createPayPalHttp(cfg: PayPalConfig): PayPalHttp {
         prefer: "return=representation",
       };
       if (method !== "GET") headers["paypal-request-id"] = opts?.requestId ?? randomUUID();
-      const res = await fetchImpl(`${cfg.baseUrl}${path}`, {
+      const res = await send(`${cfg.baseUrl}${path}`, {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),

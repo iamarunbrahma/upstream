@@ -67,6 +67,26 @@ describe("createPayPalHttp", () => {
     const http = createPayPalHttp({ clientId: "id", clientSecret: "bad", baseUrl: "https://api.test", fetchImpl: f.impl });
     await expect(http.request("GET", "/v1/a")).rejects.toMatchObject({ status: 401, code: "AUTHENTICATION_FAILURE" });
   });
+
+  it("turns a timeout or a dropped connection into a PayPalError, so callers can answer clearly", async () => {
+    const timingOut = (async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }) as typeof fetch;
+    const slow = createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: timingOut });
+    const timeout = await slow.request("GET", "/v1/a").catch((e: unknown) => e);
+    expect(timeout).toBeInstanceOf(PayPalError);
+    expect(timeout).toMatchObject({ status: 504, code: "TIMEOUT" });
+
+    let calls = 0;
+    const dropping = (async () => {
+      if (calls++ === 0) return new Response(JSON.stringify(token.body), { status: 200 });
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    const flaky = createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: dropping });
+    const dropped = await flaky.request("POST", "/v2/checkout/orders/X/capture", {}).catch((e: unknown) => e);
+    expect(dropped).toBeInstanceOf(PayPalError);
+    expect(dropped).toMatchObject({ status: 502, code: "NETWORK_ERROR" });
+  });
 });
 
 describe("createPayPalApi", () => {
