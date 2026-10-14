@@ -115,6 +115,20 @@ export const fundingEvents = pgTable(
   (t) => [index("funding_events_account").on(t.accountId)],
 );
 
+/** Payments a developer's coding agent started. Ownership lives here: the Agent Toolkit's orders carry no custom_id. */
+export const agentPayments = pgTable(
+  "agent_payments",
+  {
+    orderId: text("order_id").primaryKey(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    cents: integer("cents").notNull(),
+    status: text("status", { enum: ["created", "captured", "cancelled"] }).notNull().default("created"),
+    createdAt: createdAt(),
+    capturedAt: timestamp("captured_at", tz),
+  },
+  (t) => [index("agent_payments_account").on(t.accountId)],
+);
+
 export const webhookEvents = pgTable("webhook_events", {
   id: text("id").primaryKey(),
   eventType: text("event_type").notNull(),

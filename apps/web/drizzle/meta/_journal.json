@@ -64,6 +64,13 @@
       "when": 1791987678858,
       "tag": "0008_hard_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792003691478,
+      "tag": "0009_free_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }
