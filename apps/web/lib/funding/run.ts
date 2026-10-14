@@ -9,12 +9,14 @@ import { settle, type SettleDeps, type SettleSummary } from "./settle";
 
 export type RunDeps = SettleDeps & PayoutDeps;
 
-export interface RunReport extends SettleSummary {
+export interface PayoutRunReport {
   reconciledLines: number;
   /** Sent batches PayPal couldn't be asked about this time; they're checked on the next run. */
   uncheckedBatches: number;
   sent: SendResult[];
 }
+
+export interface RunReport extends SettleSummary, PayoutRunReport {}
 
 /** Settlement deps from the app's: Plan 1's cached registry lookup for repos, and cached GitHub lookups for people. */
 export function settlementDeps(deps: Deps & { paypal: PayPalApi }, gh: GithubGet, now?: () => Date): RunDeps {
@@ -31,6 +33,12 @@ export function settlementDeps(deps: Deps & { paypal: PayPalApi }, gh: GithubGet
   };
 }
 
+/** Catch up on payout statuses and send waiting payouts, without settling: for a daily schedule. */
+export async function runPayouts(deps: RunDeps): Promise<PayoutRunReport> {
+  const checked = await reconcilePayouts(deps);
+  return { reconciledLines: checked.updated, uncheckedBatches: checked.unreachable, sent: await payOut(deps) };
+}
+
 /** The whole job: catch up on payout statuses with PayPal, settle, then send payouts. */
 export async function runSettlement(deps: RunDeps): Promise<RunReport> {
   const checked = await reconcilePayouts(deps);
@@ -41,7 +49,11 @@ export async function runSettlement(deps: RunDeps): Promise<RunReport> {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** What a run did, in plain words, for the job's log and the "Settle now" button. */
-export function describeRun(r: RunReport): string[] {
+export function describeRun(run: RunReport | PayoutRunReport): string[] {
+  const settled = "settledFunders" in run;
+  const r: RunReport = settled
+    ? run
+    : { ...run, settlementId: "", expiredReceipts: 0, settledFunders: 0, waitingFunders: 0, setAsideCents: 0, returnedCents: 0, payoutLines: 0, queuedCents: 0 };
   const out: string[] = [];
   if (r.uncheckedBatches > 0) {
     out.push(`Couldn't reach PayPal to check ${plural(r.uncheckedBatches, "payout batch", "payout batches")}. ${r.uncheckedBatches === 1 ? "It" : "They"} will be checked on the next run.`);
@@ -63,10 +75,12 @@ export function describeRun(r: RunReport): string[] {
     if (s.outcome === "sent") out.push("PayPal took the payout batch.");
     else if (s.outcome === "sent-before") out.push("PayPal already had a payout batch from an earlier try. Its updates will fill in the details.");
     else if (s.outcome === "needs-check") {
-      out.push("A payout batch may already have gone out, and it's too old to send again safely. Check it in PayPal before paying anyone by hand.");
+      out.push(
+        `Payout batch ${s.settlementId} may already have gone out, and it's too old to send again safely. Look for it in PayPal, then run \`pnpm --filter web resolve-payout-check ${s.settlementId} resend\` if it isn't there, or \`... give-back\` to return the money to the developers.`,
+      );
     }
     else out.push(`PayPal couldn't take a payout batch (${s.error}). It will be sent on the next run.`);
   }
-  if (out.length === before) out.push("Nothing new to settle.");
+  if (out.length === before) out.push(settled ? "Nothing new to settle." : "Nothing new to pay out.");
   return out;
 }

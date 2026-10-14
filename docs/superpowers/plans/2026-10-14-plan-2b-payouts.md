@@ -3204,6 +3204,6 @@ git commit -m "Record Plan 2b sandbox run"
 - the styled dashboard and the Agent Usage vs Funding index
 - the current period's projected amount at the current pace, on the dashboard and in the agent (spec section 7, "Allocation")
 - demo mode, with a "Settle now" button that calls `/api/settle` server-side
-- Render: web service, Postgres, cron running `pnpm --filter web settle`, and the webhook registered for funding, payout-item and refund events
+- Render: web service, Postgres, two crons (monthly `pnpm --filter web settle`, and daily `pnpm --filter web settle --payouts-only` so a failed send is retried well inside PayPal's 30-day duplicate window), and the webhook registered for funding, payout-item and refund events
 - the README, which says the platform pays PayPal's $0.25 per payout line, and the production note from spec section 7
 - the video and the Devpost submission

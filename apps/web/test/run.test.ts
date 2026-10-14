@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
-import { describeRun, runSettlement, settlementDeps } from "../lib/funding/run";
+import { settlements } from "../lib/db/schema";
+import { describeRun, runPayouts, runSettlement, settlementDeps } from "../lib/funding/run";
 import { PayPalError } from "../lib/paypal/client";
 import { FakePayPal } from "../lib/paypal/fake";
 import type { Deps } from "../lib/receipts/service";
@@ -51,11 +52,28 @@ describe("runSettlement when PayPal can't be reached", () => {
   });
 });
 
+describe("runPayouts", () => {
+  it("checks and sends payouts without settling, for a more frequent schedule", async () => {
+    const w = await settlementWorld();
+    const f = await w.funder(1000);
+    await w.receipt(f, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 8);
+    await runSettlement(w.deps);
+    const before = (await w.db.select().from(settlements)).length;
+    const line = [...w.paypal.payoutBatches.values()][0]!.items[0]!;
+    w.paypal.setPayoutItemStatus(line.payout_item!.sender_item_id!, "SUCCESS");
+    const r = await runPayouts(w.deps);
+    expect(r).toMatchObject({ reconciledLines: 1, uncheckedBatches: 0, sent: [] });
+    expect((await w.db.select().from(settlements)).length).toBe(before);
+    expect(await w.owed(f, "paid")).toEqual({ carol: 1000 });
+  });
+});
+
 describe("describeRun", () => {
   it("says plainly when a batch is too old to send again safely", () => {
     const quiet = { settlementId: "s", expiredReceipts: 0, settledFunders: 0, waitingFunders: 0, setAsideCents: 0, returnedCents: 0, payoutLines: 0, queuedCents: 0, reconciledLines: 0, uncheckedBatches: 0 };
     expect(describeRun({ ...quiet, sent: [{ settlementId: "s", outcome: "needs-check" }] })).toEqual([
-      "A payout batch may already have gone out, and it's too old to send again safely. Check it in PayPal before paying anyone by hand.",
+      "Payout batch s may already have gone out, and it's too old to send again safely. Look for it in PayPal, then run `pnpm --filter web resolve-payout-check s resend` if it isn't there, or `... give-back` to return the money to the developers.",
     ]);
   });
 });

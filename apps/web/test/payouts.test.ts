@@ -3,7 +3,7 @@ import type { Db } from "../lib/db/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { accruals, payoutItems, settlements } from "../lib/db/schema";
 import { balanceCents } from "../lib/funding/ledger";
-import { FIRST_PAYOUT_HOLD_MS, payOut, queuePayouts } from "../lib/funding/payouts";
+import { FIRST_PAYOUT_HOLD_MS, payOut, queuePayouts, resolvePayoutCheck } from "../lib/funding/payouts";
 import { settle } from "../lib/funding/settle";
 import { PayPalError } from "../lib/paypal/client";
 import { DAY, settlementWorld } from "./settle-fixtures";
@@ -122,6 +122,43 @@ describe("payOut", () => {
     expect(await payOut(w.deps)).toEqual([]);
     const [s] = await w.db.select().from(settlements);
     expect(s!.batchStatus).toBe("NEEDS_CHECK");
+  });
+
+  it("doesn't start the resend clock when PayPal flatly refuses a batch, so a run a month later still sends it", async () => {
+    const f = await w.funder(1000);
+    await w.receipt(f, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 8);
+    await settle(w.deps);
+    w.paypal.failNext("createPayoutBatch", new PayPalError(422, "INSUFFICIENT_FUNDS", "Sender has insufficient funds", null));
+    expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "failed" });
+    w.at(30);
+    expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "sent" });
+    expect(batches()).toHaveLength(1);
+  });
+
+  it("lets a person settle a batch that needs checking: resend it, or give the money back", async () => {
+    const stuck = async () => {
+      const f = await w.funder(1000);
+      await w.receipt(f, { b: 10_000 });
+      const { settlementId } = await settle(w.deps);
+      w.paypal.failNext("createPayoutBatch", new PayPalError(504, "TIMEOUT", "PayPal took too long to answer", null));
+      await payOut(w.deps);
+      w.at(26);
+      expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "needs-check", settlementId });
+      w.at(0);
+      return { f, settlementId };
+    };
+    await w.claim("carol", "PAYER-CAROL", 8);
+    const first = await stuck();
+    expect(await resolvePayoutCheck(w.db, first.settlementId, "resend")).toBe(true);
+    expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "sent", settlementId: first.settlementId });
+
+    const second = await stuck();
+    expect(await resolvePayoutCheck(w.db, second.settlementId, "give-back")).toBe(true);
+    expect(await w.owed(second.f, "returned")).toEqual({ carol: 1000 });
+    expect(await balanceCents(w.db, second.f)).toBe(1000);
+    expect(await payOut(w.deps)).toEqual([]);
+    expect(await resolvePayoutCheck(w.db, second.settlementId, "resend")).toBe(false);
   });
 
   it("tries again on the next run when PayPal fails before taking the batch", async () => {

@@ -190,7 +190,7 @@ export const accruals = pgTable(
     name: text("name").notNull(),
     cents: integer("cents").notNull(),
     status: text("status", { enum: ["held", "queued", "paid", "returned"] }).notNull().default("held"),
-    returnReason: text("return_reason", { enum: ["unclaimed", "same-person", "refunded", "bounced"] }),
+    returnReason: text("return_reason", { enum: ["unclaimed", "same-person", "refunded", "bounced", "not-sent"] }),
     payoutItemId: uuid("payout_item_id").references(() => payoutItems.id),
     createdAt: createdAt(),
   },

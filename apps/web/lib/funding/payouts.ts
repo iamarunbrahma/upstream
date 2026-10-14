@@ -4,6 +4,7 @@ import { accruals, fundingEvents, maintainers, payoutItems, settlements, subscri
 import type { PayPalApi } from "../paypal/api";
 import { PayPalError } from "../paypal/client";
 import { balanceCents } from "./ledger";
+import { withSettleLock } from "./lock";
 
 const DAY = 24 * 60 * 60 * 1000;
 /** A maintainer is paid once they're owed at least this much; below it, money carries over (spec section 7). */
@@ -175,6 +176,11 @@ export async function payOut(deps: PayoutDeps): Promise<SendResult[]> {
         await deps.db.update(settlements).set({ payoutBatchId: batchId, batchStatus: "UNKNOWN" }).where(eq(settlements.id, id));
         results.push({ settlementId: id, outcome: "sent-before", ...(batchId ? { batchId } : {}) });
       } else if (e instanceof PayPalError) {
+        // A 4xx is PayPal refusing outright: no batch exists, so this try doesn't start the resend clock.
+        // A timeout, dropped connection or 5xx may have reached PayPal, so the clock keeps running.
+        if (e.status >= 400 && e.status < 500 && !sendStartedAt) {
+          await deps.db.update(settlements).set({ sendStartedAt: null }).where(eq(settlements.id, id));
+        }
         results.push({ settlementId: id, outcome: "failed", error: `${e.status} ${e.code}` });
       } else {
         throw e;
@@ -182,4 +188,30 @@ export async function payOut(deps: PayoutDeps): Promise<SendResult[]> {
     }
   }
   return results;
+}
+
+/**
+ * For a person, once they have looked in PayPal for a batch named after this settlement. "resend" when PayPal
+ * has no such batch: the next run sends it. "give-back" returns its money to the developers' budgets instead.
+ * Only for settlements waiting on a check; returns false for anything else.
+ */
+export async function resolvePayoutCheck(db: Db, settlementId: string, action: "resend" | "give-back"): Promise<boolean> {
+  return withSettleLock(db, async (tx) => {
+    const [s] = await tx.select({ status: settlements.batchStatus }).from(settlements).where(eq(settlements.id, settlementId)).limit(1);
+    if (s?.status !== "NEEDS_CHECK") return false;
+    if (action === "resend") {
+      await tx.update(settlements).set({ batchStatus: null, sendStartedAt: null }).where(eq(settlements.id, settlementId));
+      return true;
+    }
+    const lines = await tx.select({ id: payoutItems.id }).from(payoutItems).where(eq(payoutItems.settlementId, settlementId));
+    if (lines.length > 0) {
+      await tx
+        .update(accruals)
+        .set({ status: "returned", returnReason: "not-sent" })
+        .where(and(inArray(accruals.payoutItemId, lines.map((l) => l.id)), eq(accruals.status, "queued")));
+    }
+    await tx.update(payoutItems).set({ status: "NOT_SENT" }).where(eq(payoutItems.settlementId, settlementId));
+    await tx.update(settlements).set({ batchStatus: "GIVEN_BACK" }).where(eq(settlements.id, settlementId));
+    return true;
+  });
 }
