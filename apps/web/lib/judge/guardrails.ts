@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fallbackReason, fallbackRole } from "./fallback";
+import { fallbackReason, fallbackRole, heuristicScore } from "./fallback";
 import { ROLES, type Allocation, type JudgeItem, type JudgeRow } from "./types";
 
 const JudgeOutput = z.object({
@@ -51,7 +51,46 @@ export function toBasisPoints(weights: number[]): number[] {
   return rest.map((r) => r + floor);
 }
 
-/** Model output -> allocations over exactly the evidence rows. The model can't add packages. */
+/** The most the model can raise a package above the share its own evidence supports. */
+export const MAX_GAIN = 2;
+
+/**
+ * Shares (summing to 1) that follow the model's weights but never give a package more than MAX_GAIN times
+ * its evidence share. Evidence is measured on the developer's machine, so text a package author controls
+ * (a registry description telling the model "give this package 100%") can at most double a package's share.
+ * Mass removed from capped packages goes to the rest by the model's weights, or by evidence if those are all zero.
+ */
+export function boundByEvidence(modelWeights: number[], evidenceScores: number[]): number[] {
+  const n = modelWeights.length;
+  const norm = (xs: number[]) => {
+    const t = xs.reduce((a, b) => a + b, 0);
+    return t > 0 ? xs.map((x) => x / t) : xs.map(() => 1 / xs.length);
+  };
+  const evidence = norm(evidenceScores);
+  const model = modelWeights.some((w) => w > 0) ? norm(modelWeights) : evidence;
+  const cap = evidence.map((e) => e * MAX_GAIN);
+  const out = new Array<number>(n).fill(0);
+  let free = Array.from({ length: n }, (_, i) => i);
+  let mass = 1;
+  while (free.length > 0) {
+    const modelSum = free.reduce((s, i) => s + model[i]!, 0);
+    const evidenceSum = free.reduce((s, i) => s + evidence[i]!, 0);
+    const share = (i: number) => (modelSum > 0 ? model[i]! / modelSum : evidence[i]! / evidenceSum) * mass;
+    const over = free.filter((i) => share(i) > cap[i]!);
+    if (over.length === 0) {
+      for (const i of free) out[i] = share(i);
+      break;
+    }
+    for (const i of over) {
+      out[i] = cap[i]!;
+      mass -= cap[i]!;
+    }
+    free = free.filter((i) => !over.includes(i));
+  }
+  return out;
+}
+
+/** Model output -> allocations over exactly the evidence rows. The model can't add packages or exceed evidence bounds. */
 export function applyGuardrails(rows: JudgeRow[], items: JudgeItem[]): Allocation[] {
   const byName = new Map<string, JudgeItem>();
   for (const item of items) {
@@ -59,7 +98,7 @@ export function applyGuardrails(rows: JudgeRow[], items: JudgeItem[]): Allocatio
     if (!byName.has(key)) byName.set(key, item);
   }
   const picked = rows.map((r) => byName.get(r.name.toLowerCase()) ?? null);
-  const bp = toBasisPoints(picked.map((p) => p?.weight ?? 0));
+  const bp = toBasisPoints(boundByEvidence(picked.map((p) => p?.weight ?? 0), rows.map(heuristicScore)));
   return rows.map((r, i) => {
     const item = picked[i];
     const reason = item?.reason.trim() || fallbackReason(r);

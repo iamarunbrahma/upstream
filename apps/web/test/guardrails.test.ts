@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyGuardrails, largestRemainder, parseJudgeOutput, toBasisPoints } from "../lib/judge/guardrails";
+import { applyGuardrails, boundByEvidence, largestRemainder, parseJudgeOutput, toBasisPoints } from "../lib/judge/guardrails";
 import { fallbackAllocations } from "../lib/judge/fallback";
 import type { JudgeRow } from "../lib/judge/types";
 
@@ -30,6 +30,27 @@ describe("toBasisPoints", () => {
     const bp = toBasisPoints(new Array(150).fill(1));
     expect(bp.reduce((a, b) => a + b, 0)).toBe(10000);
     expect(Math.min(...bp)).toBeGreaterThanOrEqual(66);
+  });
+});
+
+describe("boundByEvidence", () => {
+  it("caps any package at twice its evidence share and hands the rest back by evidence", () => {
+    const evidence = [14.74, 3.41, 1];
+    const total = evidence.reduce((a, b) => a + b, 0);
+    const out = boundByEvidence([0, 0, 1], evidence);
+    expect(out[2]).toBeCloseTo((2 * evidence[2]!) / total, 9);
+    expect(out[0]! / out[1]!).toBeCloseTo(evidence[0]! / evidence[1]!, 9);
+    expect(out.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
+  });
+
+  it("leaves allocations inside the bounds unchanged", () => {
+    const out = boundByEvidence([85, 15], [14.74, 3.41]);
+    expect(out[0]).toBeCloseTo(0.85, 9);
+    expect(out[1]).toBeCloseTo(0.15, 9);
+  });
+
+  it("uses evidence shares when the model gives every package zero", () => {
+    expect(boundByEvidence([0, 0], [3, 1])).toEqual([0.75, 0.25]);
   });
 });
 

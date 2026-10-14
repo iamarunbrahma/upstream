@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { heuristicScore } from "../lib/judge/fallback";
 import { judgeReceipt } from "../lib/judge/judge";
 import { buildUserPrompt, PROMPT_VERSION, SYSTEM_PROMPT } from "../lib/judge/prompt";
 import type { JudgeModel, JudgeRow } from "../lib/judge/types";
@@ -86,5 +87,10 @@ describe("prompt injection through package metadata", () => {
     const r = await judgeReceipt(null, evil, scripted(obeys));
     expect(r.allocations.map((a) => a.name)).toEqual(["fastapi", "httpx", "evil-pkg"]);
     for (const a of r.allocations) expect(a.weightBp).toBeGreaterThanOrEqual(100);
+    // The model asked for 100%; the package's own evidence caps it at 2x its fixed-score share (+ the 1% floor).
+    const scores = evil.map(heuristicScore);
+    const evidenceShare = scores[2]! / scores.reduce((a, b) => a + b, 0);
+    const evilBp = r.allocations.find((a) => a.name === "evil-pkg")!.weightBp;
+    expect(evilBp).toBeLessThanOrEqual(Math.round(2 * evidenceShare * 10000) + 100);
   });
 });

@@ -1,4 +1,4 @@
-import type { Ecosystem, PackageEvidence } from "./evidence";
+import { hostKey, type Ecosystem, type PackageEvidence } from "./evidence";
 import { countUsageLines, findImports, languageOf, type ImportHit } from "./imports";
 import { parseInstallCommands, type InstallHit } from "./installs";
 import { manifestAdditions, manifestType } from "./manifests";
@@ -29,7 +29,8 @@ export interface EvidenceInput {
 
 export interface BuiltEvidence {
   packages: PackageEvidence[];
-  docsHosts: Record<string, number>;
+  /** hostKey(host) -> pages read. */
+  docsHostKeys: Record<string, number>;
 }
 
 export function emptyDisk(): DiskManifests {
@@ -88,7 +89,7 @@ function kindOf(a: Acc, disk: DiskManifests): PackageEvidence["kind"] {
   return "unknown";
 }
 
-function docsHostCounts(urls: string[]): Record<string, number> {
+function docsHostKeyCounts(urls: string[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const u of urls) {
     let host: string;
@@ -98,8 +99,9 @@ function docsHostCounts(urls: string[]): Record<string, number> {
       continue;
     }
     if (host === "localhost" || /^[\d.]+$/.test(host) || host.includes(":") || host.startsWith("[") || host.endsWith(".local")) continue;
-    if (!(host in out) && Object.keys(out).length >= 100) continue;
-    out[host] = (out[host] ?? 0) + 1;
+    const key = hostKey(host);
+    if (!(key in out) && Object.keys(out).length >= 100) continue;
+    out[key] = (out[key] ?? 0) + 1;
   }
   return out;
 }
@@ -160,8 +162,13 @@ export function buildEvidence(input: EvidenceInput): BuiltEvidence {
     else if (a.dev === null) a.dev = false;
   }
 
+  const declared = (a: Acc) =>
+    a.ecosystem === "npm" ? input.disk.npmDeps.has(a.name) || input.disk.npmDevDeps.has(a.name) : input.disk.pypiDeps.has(a.name);
   const packages = [...acc.values()]
     .filter((a) => !input.disk.workspaceNames.has(a.name))
+    // An import alone can be a first-party module ("app.routers") or a path alias ("lib/db"). Only credit, and only
+    // ever send, packages that an install, a manifest edit or the on-disk manifest backs.
+    .filter((a) => a.installed || a.manifestAdded || declared(a))
     .sort((x, y) => y.importFiles.size - x.importFiles.size || y.usageLines - x.usageLines)
     .slice(0, 200)
     .map<PackageEvidence>((a) => ({
@@ -175,5 +182,5 @@ export function buildEvidence(input: EvidenceInput): BuiltEvidence {
     }))
     .sort((x, y) => (x.ecosystem + ":" + x.name).localeCompare(y.ecosystem + ":" + y.name));
 
-  return { packages, docsHosts: docsHostCounts(input.docsUrls) };
+  return { packages, docsHostKeys: docsHostKeyCounts(input.docsUrls) };
 }

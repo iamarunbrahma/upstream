@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 export const Ecosystem = z.enum(["npm", "pypi"]);
@@ -20,12 +21,19 @@ export const ReceiptPayload = z.object({
   title: z.string().max(200).nullable(),
   endedAt: z.iso.datetime(),
   packages: z.array(PackageEvidence).max(200),
-  docsHosts: z
-    .record(z.string().max(253), z.number().int().min(1))
+  /** Docs pages the agent read, keyed by hostKey(host) so hostnames (e.g. internal wikis) never leave the machine. */
+  docsHostKeys: z
+    .record(z.string().regex(/^[0-9a-f]{16}$/), z.number().int().min(1))
     .refine((r) => Object.keys(r).length <= 100, "too many docs hosts"),
 });
 export type ReceiptPayload = z.infer<typeof ReceiptPayload>;
 
 export function packageKey(p: { ecosystem: Ecosystem; name: string }): string {
   return `${p.ecosystem}:${p.name}`;
+}
+
+/** One-way key for a hostname. The CLI sends keys; the server compares them with hostKey(package docs host). */
+export function hostKey(host: string): string {
+  const normal = host.trim().toLowerCase().replace(/^www\./, "");
+  return createHash("sha256").update(normal).digest("hex").slice(0, 16);
 }
