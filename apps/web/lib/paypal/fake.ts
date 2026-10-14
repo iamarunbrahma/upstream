@@ -1,5 +1,6 @@
 import type { PayoutLine, PayPalApi, PaypalOrder, PaypalPayoutItem, PaypalSubscription, PaypalSubscriptionTxn, WebhookVerification } from "./api";
 import { PayPalError } from "./client";
+import type { AgentOrders } from "./agent-toolkit";
 import { fromCents } from "./money";
 
 /** In-memory stand-in for PayPal, used by tests. Mirrors the response shapes the real API returns. */
@@ -233,5 +234,29 @@ export class FakePayPal implements PayPalApi {
       }
     }
     throw new Error(`no payout line ${senderItemId}`);
+  }
+}
+
+/** Stand-in for the Agent Toolkit's order tools, backed by a FakePayPal. Like the toolkit's orders, these carry no custom_id. */
+export class FakeAgentOrders implements AgentOrders {
+  calls: string[] = [];
+  urls = new Map<string, { returnUrl: string; cancelUrl: string }>();
+  constructor(readonly pp: FakePayPal = new FakePayPal()) {}
+
+  async createOrder(cents: number, returnUrl: string, cancelUrl: string) {
+    this.calls.push("createOrder");
+    const o = await this.pp.createOrder(cents, "");
+    this.urls.set(o.id, { returnUrl, cancelUrl });
+    return { id: o.id, status: o.status, approveUrl: `https://www.sandbox.paypal.com/checkoutnow?token=${o.id}` };
+  }
+
+  async getOrder(id: string) {
+    this.calls.push("getOrder");
+    return this.pp.getOrder(id);
+  }
+
+  async captureOrder(id: string) {
+    this.calls.push("captureOrder");
+    return this.pp.captureOrder(id);
   }
 }
