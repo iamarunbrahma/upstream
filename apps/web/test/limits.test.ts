@@ -20,6 +20,17 @@ describe("createRateLimiter", () => {
   });
 });
 
+describe("createRateLimiter under a flood", () => {
+  it("never evicts a key that is at its limit, so flooding with new keys can't reset it", () => {
+    const lim = createRateLimiter({ limit: 1, windowMs: 60_000, maxKeys: 10, now: () => 0 });
+    expect(lim.take("attacker")).toBe(true);
+    expect(lim.take("attacker")).toBe(false);
+    for (let i = 0; i < 1000; i++) lim.take(`junk-${i}`);
+    expect(lim.take("attacker")).toBe(false);
+    expect(lim.size()).toBeLessThanOrEqual(10);
+  });
+});
+
 describe("clientKey", () => {
   const withXff = (xff: string) => new Request("http://x", { headers: { "x-forwarded-for": xff } });
 

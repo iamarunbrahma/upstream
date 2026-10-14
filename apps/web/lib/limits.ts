@@ -6,34 +6,39 @@ export interface RateLimiter {
 }
 
 /**
- * Sliding-window limiter kept in memory, for a single server instance. At most `maxKeys` keys are tracked:
- * keys whose hits have all expired are dropped first, then the least recently used, so a flood of
- * distinct keys can't exhaust memory.
+ * Sliding-window limiter kept in memory, for a single server instance. At most `maxKeys` keys are tracked.
+ * When full it drops keys whose hits have expired, then the least recently used keys that are under their
+ * limit. A key at its limit is never dropped (that would reset it); if every tracked key is at its limit,
+ * new keys are refused until the window passes.
  */
 export function createRateLimiter(opts: { limit: number; windowMs: number; maxKeys?: number; now?: () => number }): RateLimiter {
   const hits = new Map<string, number[]>(); // insertion order = least recently used first
   const now = opts.now ?? Date.now;
   const maxKeys = opts.maxKeys ?? 10_000;
+  const live = (times: number[], t: number) => times.filter((x) => t - x < opts.windowMs);
 
-  const shrink = (t: number) => {
-    for (const [key, times] of hits) if (t - times[times.length - 1]! >= opts.windowMs) hits.delete(key);
-    if (hits.size <= maxKeys) return;
+  const makeRoom = (t: number) => {
+    for (const [key, times] of hits) if (live(times, t).length === 0) hits.delete(key);
+    if (hits.size < maxKeys) return;
     const target = Math.floor(maxKeys * 0.9);
-    for (const key of hits.keys()) {
+    for (const [key, times] of hits) {
       if (hits.size <= target) break;
-      hits.delete(key);
+      if (live(times, t).length < opts.limit) hits.delete(key);
     }
   };
 
   return {
     take(key) {
       const t = now();
-      const recent = (hits.get(key) ?? []).filter((x) => t - x < opts.windowMs);
+      if (!hits.has(key) && hits.size >= maxKeys) {
+        makeRoom(t);
+        if (hits.size >= maxKeys) return false;
+      }
+      const recent = live(hits.get(key) ?? [], t);
       const allowed = recent.length < opts.limit;
       if (allowed) recent.push(t);
       hits.delete(key);
       hits.set(key, recent);
-      if (hits.size > maxKeys) shrink(t);
       return allowed;
     },
     size: () => hits.size,
