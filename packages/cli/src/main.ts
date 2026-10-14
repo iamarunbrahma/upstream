@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
@@ -7,7 +6,7 @@ import { initCommand, receiptCommand, scanCommand, type CommandDeps } from "./co
 import { loadConfig } from "./config";
 import { detachedLauncher, fileLogger, runSessionEndHook } from "./hook";
 import { serveMcp } from "./mcp";
-import { latestTranscript } from "./transcripts";
+import { latestTranscript, readSessionTranscript } from "./transcripts";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const pluginDir = resolve(dirname(scriptPath), "..");
@@ -36,7 +35,7 @@ function commandDeps(): CommandDeps {
     api: createApi(config.apiUrl, config.token),
     out: (m) => console.log(m),
     log: fileLogger(),
-    readFile: (p) => readFileSync(p, "utf8"),
+    readFile: readSessionTranscript,
   };
 }
 
@@ -92,7 +91,7 @@ program
     await serveMcp({
       api: createApi(config.apiUrl, config.token),
       cwd: process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
-      readFile: (p) => readFileSync(p, "utf8"),
+      readFile: readSessionTranscript,
       findTranscript: (cwd) => latestTranscript(cwd),
     });
   });

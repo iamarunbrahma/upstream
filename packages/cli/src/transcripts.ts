@@ -1,6 +1,6 @@
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 /** Claude Code stores transcripts in ~/.claude/projects/<cwd with every non-alphanumeric character as "-">. */
 export function projectSlug(cwd: string): string {
@@ -23,4 +23,27 @@ export function latestTranscript(cwd: string, claudeDir: string = join(homedir()
     if (!best || mtime > best.mtime) best = { path, mtime };
   }
   return best?.path ?? null;
+}
+
+/**
+ * A session's full transcript text: the main file plus every subagent transcript, which Claude Code
+ * stores in `<session-id>/subagents/*.jsonl` next to it. Work done by subagents counts too.
+ */
+export function readSessionTranscript(path: string): string {
+  const parts = [readFileSync(path, "utf8")];
+  const subagents = join(dirname(path), basename(path, ".jsonl"), "subagents");
+  let names: string[] = [];
+  try {
+    names = readdirSync(subagents).filter((f) => f.endsWith(".jsonl")).sort();
+  } catch {
+    // No subagents in this session.
+  }
+  for (const name of names) {
+    try {
+      parts.push(readFileSync(join(subagents, name), "utf8"));
+    } catch {
+      // A subagent file that vanished mid-read is skipped.
+    }
+  }
+  return parts.join("\n");
 }

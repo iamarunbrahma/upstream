@@ -71,3 +71,5 @@ Final: minor (deferred): getDeps caches a rejected promise; PGlite under next de
 Final: minor (deferred): no thinkingBudget on Gemini; worst-case registry+2 judge calls can exceed CLI 60s timeout
 Final: minor (deferred): IPv6 clients keyed by full address (should key by /64)
 Final: minor (deferred): init silently replaces the token (orphans earlier receipts); devices route reads body before limiter; hook.log unbounded; spec drift in fallback score/prompt (no homepage); stale .data/pglite after 0000 regeneration
+
+Post-merge (14 Oct, with Arun's OK to inspect the scratch project's own transcripts): reviewer item 6 VERIFIED — Claude Code stores subagent tool calls in <session-id>/subagents/agent-*.jsonl; the main transcript only has the Agent call. Fixed: readSessionTranscript concatenates main + subagent transcripts (CLI + MCP); collect.test 'includes tool calls made by subagents' RED->GREEN; suite 131/131; real subagent session now credits httpx from the subagent's Write.

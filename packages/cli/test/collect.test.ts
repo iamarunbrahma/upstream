@@ -6,7 +6,7 @@ import { ReceiptPayload } from "@upstream/core";
 import { describe, expect, it } from "vitest";
 import { evidenceFromGitDiff, evidenceFromTranscript, parseUnifiedDiff } from "../src/collect";
 import { readDiskManifests } from "../src/disk";
-import { latestTranscript, projectSlug } from "../src/transcripts";
+import { latestTranscript, projectSlug, readSessionTranscript } from "../src/transcripts";
 
 const fixture = new URL("./fixtures/session.jsonl", import.meta.url);
 
@@ -46,6 +46,29 @@ describe("evidenceFromTranscript in a repo with nested manifests", () => {
     ].join("\n");
     const payload = evidenceFromTranscript("/x/m.jsonl", jsonl, root);
     expect(payload.packages.map((p) => `${p.ecosystem}:${p.name}`)).toEqual(["npm:react", "pypi:fastapi"]);
+  });
+});
+
+describe("readSessionTranscript", () => {
+  it("includes tool calls made by subagents, which Claude Code stores next to the main transcript", () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-"));
+    const main = join(dir, "s1.jsonl");
+    writeFileSync(main, JSON.stringify({ type: "assistant", sessionId: "s1", message: { content: [{ type: "tool_use", id: "a", name: "Agent", input: { prompt: "x" } }] } }) + "\n");
+    mkdirSync(join(dir, "s1", "subagents"), { recursive: true });
+    writeFileSync(
+      join(dir, "s1", "subagents", "agent-1.jsonl"),
+      JSON.stringify({ type: "assistant", sessionId: "s1", isSidechain: true, message: { content: [{ type: "tool_use", id: "b", name: "Bash", input: { command: "pip install httpx" } }] } }) + "\n",
+    );
+    const payload = evidenceFromTranscript(main, readSessionTranscript(main), "/nonexistent");
+    expect(payload.sessionId).toBe("s1");
+    expect(payload.packages.map((p) => p.name)).toEqual(["httpx"]);
+  });
+
+  it("reads just the main transcript when there are no subagents", () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-"));
+    const main = join(dir, "s2.jsonl");
+    writeFileSync(main, "{}\n");
+    expect(readSessionTranscript(main)).toBe("{}\n");
   });
 });
 
