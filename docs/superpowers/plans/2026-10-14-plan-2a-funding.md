@@ -2710,3 +2710,4 @@ Write **Plan 2b (payouts)** against these interfaces:
 - Settlement uses largest-remainder maths, carries over anything under $1, and returns money unclaimed for 90 days.
 - Payouts batches go to `PAYPAL_ID`, and the `PAYMENT.PAYOUTS-ITEM.*` webhooks track them.
 - Self-dealing controls: no payout to a maintainer whose verified PayPal payer id matches a funding event's `payer_id` for that funder, a per-funder per-maintainer monthly cap, and a hold before the first payout.
+- Refunds and reversals reduce the budget: negative ledger entries for `PAYMENT.SALE.REFUNDED`/`REVERSED` and `PAYMENT.CAPTURE.REFUNDED`/`REVERSED`, and a reconcile that notices a refunded sale. Without this, a funder could pay, have it paid out, then win a chargeback (final review of Plan 2a, I6).
