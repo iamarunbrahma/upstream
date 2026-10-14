@@ -28,6 +28,8 @@ export interface Deps {
   demoStartLimiter?: RateLimiter;
   /** Per-account cap on the demo's "Settle now". */
   demoSettleLimiter?: RateLimiter;
+  /** Cap on AI judging for the demo's sample session, shared by every demo account. */
+  demoJudgeLimiter?: RateLimiter;
   /** PayPal REST client; null when the server has no PayPal credentials. */
   paypal?: PayPalApi | null;
   planIds?: Partial<Record<TierKey, string>>;
@@ -146,6 +148,12 @@ export async function submitReceipt(
 
 export function getReceipt(deps: Deps, accountId: string, id: string): Promise<ReceiptView | null> {
   return loadView(deps.db, accountId, id);
+}
+
+/** This account's receipt for a session, if it has one. */
+export async function receiptForSession(deps: Deps, accountId: string, sessionId: string): Promise<ReceiptView | null> {
+  const found = await findBySession(deps.db, accountId, sessionId);
+  return found ? loadView(deps.db, accountId, found.id) : null;
 }
 
 export async function listReceipts(deps: Deps, accountId: string, status?: ReceiptStatus, limit = 20): Promise<ReceiptView[]> {
