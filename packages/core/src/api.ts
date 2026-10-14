@@ -1,6 +1,6 @@
 import type { PackageEvidence } from "./evidence";
 
-export type ReceiptStatus = "proposed" | "approved" | "skipped";
+export type ReceiptStatus = "proposed" | "approved" | "skipped" | "expired";
 
 export interface ReceiptItemView {
   ecosystem: PackageEvidence["ecosystem"];

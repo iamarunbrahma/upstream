@@ -21,7 +21,7 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 const Query = z.object({
-  status: z.enum(["proposed", "approved", "skipped"]).optional(),
+  status: z.enum(["proposed", "approved", "skipped", "expired"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 

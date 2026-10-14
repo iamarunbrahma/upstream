@@ -27,7 +27,7 @@ export const receipts = pgTable(
     agent: text("agent", { enum: ["claude-code", "git-diff"] }).notNull(),
     title: text("title"),
     endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
-    status: text("status", { enum: ["proposed", "approved", "skipped"] }).notNull().default("proposed"),
+    status: text("status", { enum: ["proposed", "approved", "skipped", "expired"] }).notNull().default("proposed"),
     source: text("source", { enum: ["ai", "fallback"] }).notNull(),
     modelId: text("model_id"),
     promptVersion: text("prompt_version").notNull(),

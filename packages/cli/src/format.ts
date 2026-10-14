@@ -1,6 +1,11 @@
 import type { ReceiptView } from "@upstream/core";
 
-const STATUS = { proposed: "Waiting for your approval.", approved: "Approved.", skipped: "Skipped." } as const;
+const STATUS = {
+  proposed: "Waiting for your approval.",
+  approved: "Approved.",
+  skipped: "Skipped.",
+  expired: "Not approved within 14 days, so it won't be paid.",
+} as const;
 
 export function formatReceipt(r: ReceiptView): string {
   const header = `Upstream receipt - ${r.title ?? "untitled session"}${r.source === "ai" ? "" : "  (estimated without AI)"}`;
