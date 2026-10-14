@@ -115,7 +115,7 @@ describe("Settle now", () => {
     await approvedReceipt(accountId);
     const res = await press(cookie);
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { summary: string[] }).summary).toEqual(["Set aside $10.00 of your budget for open-source maintainers."]);
+    expect(await res.json()).toEqual({ outcome: "settled", summary: ["Set aside $10.00 of your budget for open-source maintainers."] });
   });
 
   it("describes only the visitor's own budget, never the rest of the server's run", () => {
@@ -124,17 +124,25 @@ describe("Settle now", () => {
       returnedCents: 9999, payoutLines: 1, queuedCents: 120, reconciledLines: 7, uncheckedBatches: 2,
       sent: [{ settlementId: "s-old", outcome: "needs-check" as const }, { settlementId: "s-1", outcome: "sent" as const }],
     };
-    expect(describeSettleNow(run)).toEqual([
-      "Set aside $5.00 of your budget for open-source maintainers.",
-      "$1.20 of it is on its way through PayPal Payouts to 1 maintainer who joined Upstream.",
-    ]);
-    expect(describeSettleNow({ ...run, settledFunders: 0, waitingFunders: 1, setAsideCents: 0, payoutLines: 0, queuedCents: 0, sent: [] })).toEqual([
-      "GitHub or a package registry is busy, so your budget wasn't settled yet. Please press Settle now again in a minute.",
-    ]);
-    expect(describeSettleNow({ ...run, setAsideCents: 0, payoutLines: 0, queuedCents: 0 })).toEqual([
-      "None of these packages has a maintainer Upstream can pay yet, so your budget stays as it is.",
-    ]);
-    expect(describeSettleNow({ ...run, sent: [{ settlementId: "s-1", outcome: "failed" as const, error: "x" }] })[1]).toBe(
+    expect(describeSettleNow(run)).toEqual({
+      outcome: "settled",
+      summary: ["Set aside $5.00 of your budget for open-source maintainers.", "$1.20 of it is on its way through PayPal Payouts to 1 maintainer who joined Upstream."],
+    });
+    // Another run sending this batch at the same moment still means it's on its way.
+    expect(describeSettleNow({ ...run, sent: [] }).summary[1]).toBe("$1.20 of it is on its way through PayPal Payouts to 1 maintainer who joined Upstream.");
+    expect(describeSettleNow({ ...run, settledFunders: 0, waitingFunders: 1, setAsideCents: 0, payoutLines: 0, queuedCents: 0, sent: [] })).toEqual({
+      outcome: "waiting",
+      summary: ["GitHub or a package registry is busy, so your budget wasn't settled yet. Please press Settle now again in a minute."],
+    });
+    expect(describeSettleNow({ ...run, settledFunders: 0, setAsideCents: 0, payoutLines: 0, queuedCents: 0, sent: [] })).toEqual({
+      outcome: "nothing",
+      summary: ["Nothing new to settle."],
+    });
+    expect(describeSettleNow({ ...run, setAsideCents: 0, payoutLines: 0, queuedCents: 0 })).toEqual({
+      outcome: "kept",
+      summary: ["None of these packages has a maintainer Upstream can pay yet, so your budget stays as it is."],
+    });
+    expect(describeSettleNow({ ...run, sent: [{ settlementId: "s-1", outcome: "failed" as const, error: "x" }] }).summary[1]).toBe(
       "$1.20 of it is ready for 1 maintainer who joined Upstream, but PayPal couldn't take the payout right now. It goes out on the next run.",
     );
   });

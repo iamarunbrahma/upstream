@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { call, type Me, type ReceiptView } from "./api";
+import type { SettleNowOutcome } from "@/lib/demo/settle-now";
 import type { DashboardTab } from "./Dashboard";
 
 interface Step {
@@ -96,9 +97,13 @@ export function DemoGuide(props: { me: Me; receipts: ReceiptView[]; onChange: ()
           disabled={busy !== null}
           onClick={() =>
             void run("settle", async () => {
-              const { summary } = await call<{ summary: string[] }>("POST", "/api/demo/settle");
-              props.onShow("money");
-              toast.success("Settled", { description: summary.join(" ") });
+              const { outcome, summary } = await call<{ outcome: SettleNowOutcome; summary: string[] }>("POST", "/api/demo/settle");
+              const description = summary.join(" ");
+              if (outcome === "settled") {
+                props.onShow("money");
+                toast.success("Settled", { description });
+              } else if (outcome === "nothing") toast.info("Nothing new to settle", { description: "Approve another receipt, or add money, and settle again." });
+              else toast.warning(outcome === "waiting" ? "Not settled yet" : "Nothing set aside", { description });
             })
           }
         >

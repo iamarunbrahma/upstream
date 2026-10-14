@@ -19,6 +19,6 @@ export async function POST(req: Request): Promise<Response> {
     if (blocker) return json({ error: blocker }, 409);
     const run = settlementDeps({ ...deps, paypal: deps.paypal }, createGithubGet(process.env.GITHUB_TOKEN));
     const report = await runSettlement(run, { funderId: accountId });
-    return json({ summary: describeSettleNow(report) });
+    return json(describeSettleNow(report));
   });
 }
