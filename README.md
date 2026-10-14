@@ -45,6 +45,10 @@ upstream dashboard   # opens your dashboard
 
 When a Claude Code session started with that plugin ends, its receipt shows up on your dashboard.
 
+## Pay from your agent
+
+Ask your coding agent to "add $10 to my Upstream budget", or run `/upstream:fund 10`. The agent starts a PayPal payment and shows you the link; you approve it in PayPal, and the agent finishes it and tells you what was added. Upstream's server creates and captures the order with PayPal's Agent Toolkit, allowed only to create, read and capture orders, on the sandbox. Your agent can't move money without your approval in PayPal, a payment is $1 to $500, and your agent can add at most $100 a day.
+
 ## PayPal and AI used
 
 - **PayPal:** Subscriptions and billing plans, Catalog products, Orders v2, the JavaScript SDK v6, Payouts, Webhooks, and Log in with PayPal, all in the sandbox.

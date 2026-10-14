@@ -79,7 +79,7 @@ export async function paymentStatusTool(deps: Pick<McpDeps, "api">, args: { orde
 }
 
 export function buildServer(deps: McpDeps): McpServer {
-  const server = new McpServer({ name: "upstream", version: "0.1.0" });
+  const server = new McpServer({ name: "upstream", version: "0.2.0" });
   server.registerTool(
     "upstream_receipt",
     {

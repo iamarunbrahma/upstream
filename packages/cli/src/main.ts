@@ -43,7 +43,7 @@ function commandDeps(): CommandDeps {
 const program = new Command()
   .name("upstream")
   .description("Your AI coding agent pays back the open source it builds with.")
-  .version("0.1.0");
+  .version("0.2.0");
 
 program
   .command("init")
