@@ -1,8 +1,9 @@
-import { and, eq, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { accruals, fundingEvents, maintainers, payoutItems, settlements, subscriptions } from "../db/schema";
 import type { PayPalApi } from "../paypal/api";
 import { PayPalError } from "../paypal/client";
+import { balanceCents } from "./ledger";
 
 const DAY = 24 * 60 * 60 * 1000;
 /** A maintainer is paid once they're owed at least this much; below it, money carries over (spec section 7). */
@@ -26,6 +27,7 @@ const total = (rows: Array<{ cents: number }>) => rows.reduce((sum, r) => sum + 
  * maintainer who linked PayPal at least 7 days ago, and is owed $1 or more, on one payout line.
  */
 export async function queuePayouts(tx: Db, settlementId: string, now: Date): Promise<QueueSummary> {
+  const refunded = await takeBackRefunded(tx);
   const claimed = tx.select({ login: maintainers.login }).from(maintainers).where(isNotNull(maintainers.paypalPayerId));
   const unclaimed = await tx
     .update(accruals)
@@ -65,7 +67,32 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date): Pro
     await tx.update(accruals).set({ status: "queued", payoutItemId: line!.id }).where(and(eq(accruals.status, "held"), eq(accruals.login, r.login)));
     queuedCents += cents;
   }
-  return { returnedCents: total(unclaimed) + total(samePerson), payoutLines: ready.length, queuedCents };
+  return { returnedCents: refunded + total(unclaimed) + total(samePerson), payoutLines: ready.length, queuedCents };
+}
+
+/** A refund after a settlement can leave a funder below zero. Take back their money not yet paid out, newest first. */
+async function takeBackRefunded(tx: Db): Promise<number> {
+  const funders = await tx.selectDistinct({ id: accruals.funderId }).from(accruals).where(eq(accruals.status, "held"));
+  let returned = 0;
+  for (const f of funders) {
+    let short = -(await balanceCents(tx, f.id));
+    if (short <= 0) continue;
+    const held = await tx
+      .select({ id: accruals.id, cents: accruals.cents })
+      .from(accruals)
+      .where(and(eq(accruals.funderId, f.id), eq(accruals.status, "held")))
+      .orderBy(desc(accruals.createdAt), desc(accruals.cents));
+    const ids: string[] = [];
+    for (const a of held) {
+      if (short <= 0) break;
+      ids.push(a.id);
+      short -= a.cents;
+    }
+    if (ids.length === 0) continue;
+    const back = await tx.update(accruals).set({ status: "returned", returnReason: "refunded" }).where(inArray(accruals.id, ids)).returning({ cents: accruals.cents });
+    returned += total(back);
+  }
+  return returned;
 }
 
 export interface PayoutDeps {
