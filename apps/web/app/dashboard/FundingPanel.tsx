@@ -1,48 +1,28 @@
 "use client";
 
 import { PayPalOneTimePaymentButton, PayPalProvider, PayPalSubscriptionButton } from "@paypal/react-paypal-js/sdk-v6";
-import { useCallback, useEffect, useState } from "react";
-import { formatUsd } from "../../lib/format";
+import { CircleAlert, CircleCheck, Clock, Repeat, Wallet } from "lucide-react";
+import { useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatUsd } from "@/lib/format";
+import { call, type Me } from "./api";
 import { recordPayment } from "./record-payment";
 
-interface Me {
-  balanceCents: number;
-  givenCents: number;
-  subscription: { id: string; tier: string; status: string } | null;
-  autoApprove: boolean;
-  receipts: { proposed: number; approved: number; skipped: number };
-  paymentsReady: boolean;
-}
-
-async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Something went wrong (${res.status})`);
-  return data;
-}
-
-export function FundingPanel(props: { clientId: string; environment: "sandbox" | "production"; tiers: { key: string; label: string }[] }) {
-  const [me, setMe] = useState<Me | null>(null);
+export function FundingPanel(props: {
+  me: Me;
+  refresh: () => Promise<void>;
+  clientId: string;
+  environment: "sandbox" | "production";
+  tiers: { key: string; label: string }[];
+}) {
+  const { me, refresh } = props;
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [topupCents, setTopupCents] = useState(1000);
   const [pending, setPending] = useState<{ message: string; retry: () => void } | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      setMe(await call<Me>("GET", "/api/me"));
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, []);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   /** Records a payment PayPal has approved. If that can't finish yet, offers "Check again", which repeats it safely. */
   async function settle(record: () => Promise<{ credited: number }>, tries: number, notYet: string): Promise<void> {
@@ -65,91 +45,101 @@ export function FundingPanel(props: { clientId: string; environment: "sandbox" |
     setPending({ message: r ? notYet : "PayPal has your payment, but we couldn't record it yet.", retry: () => void settle(record, 1, notYet) });
   }
 
-  if (!me && error) {
-    return (
-      <p>
-        {error}. Open your dashboard from the terminal with <code>upstream dashboard</code>.
-      </p>
-    );
-  }
-  if (!me) return <p>Loading your budget...</p>;
-
   const activeTier = me.subscription?.status === "ACTIVE" ? props.tiers.find((t) => t.key === me.subscription!.tier) : undefined;
 
   return (
-    <div>
-      <p style={{ fontSize: 32, margin: "8px 0" }}>
-        {formatUsd(me.balanceCents)} <span style={{ fontSize: 16, color: "#555" }}>in your budget</span>
-      </p>
-      {me.givenCents > 0 && <p>{formatUsd(me.givenCents)} set aside for open-source maintainers so far.</p>}
-      {notice && <p role="status">{notice}</p>}
-      {pending && (
-        <p role="status">
-          {pending.message}{" "}
-          <button type="button" onClick={pending.retry}>
-            Check again
-          </button>
-        </p>
-      )}
-      {error && <p role="alert">{error}</p>}
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-base font-semibold">Add money to your budget</CardTitle>
+        <CardDescription>Pay with PayPal. On the demo, sign in with the sandbox PayPal login from the testing notes.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {notice && (
+          <Alert>
+            <CircleCheck />
+            <AlertDescription role="status">{notice}</AlertDescription>
+          </Alert>
+        )}
+        {pending && (
+          <Alert>
+            <Clock />
+            <AlertDescription role="status" className="flex flex-wrap items-center gap-3">
+              {pending.message}
+              <Button size="sm" variant="outline" onClick={pending.retry}>
+                Check again
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {error && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription role="alert">{error}</AlertDescription>
+          </Alert>
+        )}
 
-      {!me.paymentsReady ? (
-        <p>Payments aren&apos;t set up on this server yet.</p>
-      ) : (
-        <PayPalProvider clientId={props.clientId} environment={props.environment} components={["paypal-payments", "paypal-subscriptions"]} pageType="checkout">
-          <h2>Monthly budget</h2>
-          {activeTier ? (
-            <p>You give {activeTier.label}. Thank you.</p>
-          ) : (
-            props.tiers.map((t) => (
-              <div key={t.key} style={{ margin: "12px 0" }}>
-                <p>{t.label}</p>
-                <PayPalSubscriptionButton
-                  createSubscription={async () => ({
-                    subscriptionId: (await call<{ subscriptionId: string }>("POST", "/api/subscriptions", { tier: t.key })).subscriptionId,
-                  })}
-                  onApprove={async ({ subscriptionId }) => {
-                    void settle(() => call<{ credited: number }>("POST", `/api/subscriptions/${subscriptionId}/reconcile`), 12, "Thanks. Your first payment will show up here soon.");
-                  }}
-                  onError={() => setError("PayPal couldn't start the subscription. Please try again.")}
-                />
+        {!me.paymentsReady ? (
+          <p className="text-sm text-muted-foreground">Payments aren&apos;t set up on this server yet.</p>
+        ) : (
+          <PayPalProvider clientId={props.clientId} environment={props.environment} components={["paypal-payments", "paypal-subscriptions"]} pageType="checkout">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border p-4">
+                <div className="mb-3 flex items-center gap-2 font-medium">
+                  <Repeat className="size-4 text-primary" /> Every month
+                </div>
+                {activeTier ? (
+                  <p className="text-sm">
+                    You give <strong>{activeTier.label}</strong>. Thank you.
+                  </p>
+                ) : (
+                  <div className="grid gap-3">
+                    {props.tiers.map((t) => (
+                      <div key={t.key} className="grid gap-1.5">
+                        <span className="text-sm text-muted-foreground">{t.label}</span>
+                        <PayPalSubscriptionButton
+                          createSubscription={async () => ({
+                            subscriptionId: (await call<{ subscriptionId: string }>("POST", "/api/subscriptions", { tier: t.key })).subscriptionId,
+                          })}
+                          onApprove={async ({ subscriptionId }) => {
+                            void settle(() => call<{ credited: number }>("POST", `/api/subscriptions/${subscriptionId}/reconcile`), 12, "Thanks. Your first payment will show up here soon.");
+                          }}
+                          onError={() => setError("PayPal couldn't start the subscription. Please try again.")}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))
-          )}
-
-          <h2>Add money once</h2>
-          <select value={topupCents} onChange={(e) => setTopupCents(Number(e.target.value))} aria-label="Amount to add">
-            {[500, 1000, 2500].map((c) => (
-              <option key={c} value={c}>
-                {formatUsd(c)}
-              </option>
-            ))}
-          </select>
-          <PayPalOneTimePaymentButton
-            createOrder={async () => ({ orderId: (await call<{ orderId: string }>("POST", "/api/topups", { cents: topupCents })).orderId })}
-            onApprove={async ({ orderId }) => {
-              void settle(() => call<{ credited: number }>("POST", `/api/topups/${orderId}/capture`), 3, "Thanks. PayPal is still processing this payment.");
-            }}
-            onError={() => setError("PayPal couldn't take the payment. Please try again.")}
-          />
-        </PayPalProvider>
-      )}
-
-      <h2>Receipts</h2>
-      <label>
-        <input
-          type="checkbox"
-          checked={me.autoApprove}
-          onChange={async (e) => {
-            await call("PATCH", "/api/settings", { autoApprove: e.target.checked });
-            await refresh();
-          }}
-        />{" "}
-        Approve my receipts automatically while I have money in my budget
-      </label>
-      <p>
-        {me.receipts.proposed} waiting for you, {me.receipts.approved} approved.
-      </p>
-    </div>
+              <div className="rounded-xl border p-4">
+                <div className="mb-3 flex items-center gap-2 font-medium">
+                  <Wallet className="size-4 text-primary" /> Once
+                </div>
+                <div className="grid gap-3">
+                  <Select value={String(topupCents)} onValueChange={(v) => setTopupCents(Number(v))}>
+                    <SelectTrigger className="w-full" aria-label="Amount to add">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[500, 1000, 2500].map((c) => (
+                        <SelectItem key={c} value={String(c)}>
+                          {formatUsd(c)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <PayPalOneTimePaymentButton
+                    createOrder={async () => ({ orderId: (await call<{ orderId: string }>("POST", "/api/topups", { cents: topupCents })).orderId })}
+                    onApprove={async ({ orderId }) => {
+                      void settle(() => call<{ credited: number }>("POST", `/api/topups/${orderId}/capture`), 3, "Thanks. PayPal is still processing this payment.");
+                    }}
+                    onError={() => setError("PayPal couldn't take the payment. Please try again.")}
+                  />
+                </div>
+              </div>
+            </div>
+          </PayPalProvider>
+        )}
+      </CardContent>
+    </Card>
   );
 }
