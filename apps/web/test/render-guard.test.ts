@@ -48,7 +48,7 @@ describe("guardConfigFromEnv", () => {
 });
 
 /** A fake Render API with the shapes Render's REST API answers with. */
-function fakeRender(opts: { webPlan?: string; bandwidth?: number[]; suspended?: boolean } = {}) {
+function fakeRender(opts: { webPlan?: string; bandwidth?: number[]; unit?: string; suspended?: boolean } = {}) {
   const posts: string[] = [];
   const gets: string[] = [];
   const api: RenderApi = {
@@ -62,7 +62,11 @@ function fakeRender(opts: { webPlan?: string; bandwidth?: number[]; suspended?: 
         ];
       }
       if (path.startsWith("/postgres?")) return [{ postgres: { id: "dpg-1", name: "upstream-db", plan: "basic_256mb", suspended: "not_suspended" } }];
-      if (path.startsWith("/metrics/bandwidth?")) return [{ labels: [{ field: "service", value: "srv-web" }], values: (opts.bandwidth ?? [0.5]).map((value) => ({ timestamp: "2026-11-01T00:00:00Z", value })), unit: "GB" }];
+      // As Render really answers: megabytes, per hour, for web services only (a cron job id is "not found").
+      if (path.startsWith("/metrics/bandwidth?")) {
+        if (path.includes("crn-")) throw new Error("Render API GET /metrics/bandwidth answered 400");
+        return [{ labels: [{ field: "service", value: "srv-web" }], values: (opts.bandwidth ?? [500]).map((value) => ({ timestamp: "2026-11-01T00:00:00Z", value })), unit: opts.unit ?? "mb" }];
+      }
       throw new Error(`unexpected GET ${path}`);
     },
     post: async (path) => {
@@ -79,16 +83,21 @@ describe("runGuard", () => {
     expect(r.posts).toEqual([]);
     const bandwidth = r.gets.find((g) => g.startsWith("/metrics/bandwidth?"))!;
     expect(bandwidth).toContain("resource=srv-web");
-    expect(bandwidth).toContain("resource=crn-1");
+    expect(bandwidth).not.toContain("crn-1");
     expect(bandwidth).not.toContain("srv-other");
-    expect(bandwidth).toContain(`startTime=${Date.UTC(2026, 10, 1) / 1000}`);
+    expect(bandwidth).toContain(`startTime=${encodeURIComponent("2026-11-01T00:00:00.000Z")}`);
   });
 
   it("suspends every Upstream service and the database when a limit is crossed", async () => {
-    const r = fakeRender({ bandwidth: [20, 11] });
+    const r = fakeRender({ bandwidth: [20_000, 11_000] });
     const out = await runGuard(r.api, cfg, at("2026-11-20T00:00:00Z"));
     expect(out).toMatchObject({ suspend: true, bandwidthGb: 31 });
     expect(r.posts).toEqual(["/services/srv-web/suspend", "/services/crn-1/suspend", "/postgres/dpg-1/suspend"]);
+  });
+
+  it("reads bandwidth in the unit Render gives, and refuses a unit it doesn't know", async () => {
+    expect((await runGuard(fakeRender({ bandwidth: [2], unit: "gb" }).api, cfg, at("2026-11-20T00:00:00Z"))).bandwidthGb).toBe(2);
+    await expect(runGuard(fakeRender({ unit: "furlongs" }).api, cfg, at("2026-11-20T00:00:00Z"))).rejects.toThrow('unknown bandwidth unit "furlongs"');
   });
 
   it("leaves services that are already suspended alone", async () => {

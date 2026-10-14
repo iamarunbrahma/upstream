@@ -61,13 +61,24 @@ export function decide(now: Date, cfg: GuardConfig, reading: GuardReading): { su
 }
 
 interface ListedService {
-  service: { id: string; name: string; suspended: string; serviceDetails?: { plan?: string } };
+  service: { id: string; name: string; type: string; suspended: string; serviceDetails?: { plan?: string } };
 }
 interface ListedPostgres {
   postgres: { id: string; name: string; plan: string; suspended: string };
 }
 interface BandwidthSeries {
+  unit: string;
   values: Array<{ value: number }>;
+}
+
+/** GB per unit Render reports bandwidth in. Decimal, as Render bills, so a megabyte never counts for less. */
+const GB_PER: Record<string, number> = { b: 1e-9, kb: 1e-6, mb: 1e-3, gb: 1, tb: 1e3 };
+
+function toGb(series: BandwidthSeries): number {
+  const per = GB_PER[series.unit.toLowerCase()];
+  // An answer the guard can't read must stop the run (and email), never pass as zero.
+  if (per === undefined) throw new Error(`unknown bandwidth unit "${series.unit}"`);
+  return series.values.reduce((sum, v) => sum + v.value, 0) * per;
 }
 
 const query = (pairs: Array<[string, string | number]>) => pairs.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");
@@ -81,13 +92,15 @@ export async function runGuard(api: RenderApi, cfg: GuardConfig, now: Date = new
     .map((l) => l.postgres)
     .filter((p) => p.name === cfg.database.name);
 
-  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000;
+  // Only web services send bandwidth (Render answers "not found" for a cron job), and times are ISO 8601.
+  const web = services.filter((s) => s.type === "web_service");
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
   let bandwidthGb = 0;
-  if (services.length > 0) {
+  if (web.length > 0) {
     const series = (await api.get(
-      `/metrics/bandwidth?${query([...services.map((s): [string, string] => ["resource", s.id]), ["startTime", monthStart], ["endTime", Math.floor(now.getTime() / 1000)]])}`,
+      `/metrics/bandwidth?${query([...web.map((s): [string, string] => ["resource", s.id]), ["startTime", monthStart], ["endTime", now.toISOString()]])}`,
     )) as BandwidthSeries[];
-    bandwidthGb = series.reduce((sum, s) => sum + s.values.reduce((a, v) => a + v.value, 0), 0);
+    bandwidthGb = series.reduce((sum, s) => sum + toGb(s), 0);
   }
 
   const plans = Object.fromEntries(services.map((s) => [s.name, s.serviceDetails?.plan ?? "unknown"]));
