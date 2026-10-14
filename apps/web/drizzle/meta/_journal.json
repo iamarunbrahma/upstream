@@ -8,6 +8,13 @@
       "when": 1791956570745,
       "tag": "0000_lethal_the_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791960864703,
+      "tag": "0001_lying_eternals",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import type { PackageEvidence } from "@upstream/core";
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { TIER_KEYS } from "../paypal/plans";
 import type { ResolvedPackage } from "../resolver/registry";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -60,4 +61,63 @@ export const packageCache = pgTable("package_cache", {
   key: text("key").primaryKey(),
   data: jsonb("data").$type<ResolvedPackage>().notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+});
+
+const tz = { withTimezone: true } as const;
+
+export const webSessions = pgTable("web_sessions", {
+  idHash: text("id_hash").primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  createdAt: createdAt(),
+  expiresAt: timestamp("expires_at", tz).notNull(),
+});
+
+export const loginCodes = pgTable("login_codes", {
+  codeHash: text("code_hash").primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id),
+  createdAt: createdAt(),
+  expiresAt: timestamp("expires_at", tz).notNull(),
+  usedAt: timestamp("used_at", tz),
+});
+
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: text("id").primaryKey(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    tier: text("tier", { enum: TIER_KEYS }).notNull(),
+    status: text("status").notNull(),
+    payerId: text("payer_id"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", tz).notNull().defaultNow(),
+  },
+  (t) => [index("subscriptions_account").on(t.accountId)],
+);
+
+export const fundingEvents = pgTable(
+  "funding_events",
+  {
+    paypalId: text("paypal_id").primaryKey(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    source: text("source", { enum: ["subscription", "topup"] }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    payerId: text("payer_id"),
+    occurredAt: timestamp("occurred_at", tz).notNull(),
+    createdAt: createdAt(),
+    raw: jsonb("raw"),
+  },
+  (t) => [index("funding_events_account").on(t.accountId)],
+);
+
+export const webhookEvents = pgTable("webhook_events", {
+  id: text("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  outcome: text("outcome").notNull(),
+  receivedAt: timestamp("received_at", tz).notNull().defaultNow(),
+});
+
+export const accountSettings = pgTable("account_settings", {
+  accountId: uuid("account_id").primaryKey().references(() => accounts.id),
+  autoApprove: boolean("auto_approve").notNull().default(false),
+  updatedAt: timestamp("updated_at", tz).notNull().defaultNow(),
 });
