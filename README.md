@@ -33,6 +33,18 @@ The hosted demo runs on the PayPal sandbox, so no real money moves. **Try the de
 
 The landing page's **Agent usage vs funding** chart sets each package's share of agent work, from real Claude Code sessions, against its share of the money Upstream has set aside. `pnpm --filter web usage-index` rebuilds the usage side from the sessions on your own machine, keeping only package names and counts.
 
+## Use it from Claude Code
+
+The CLI and the Claude Code plugin are on npm as `upstream-pay`, and they talk to the hosted demo:
+
+```bash
+npm install -g upstream-pay
+upstream init        # links this machine to Upstream and prints the claude --plugin-dir line to start with
+upstream dashboard   # opens your dashboard
+```
+
+When a Claude Code session started with that plugin ends, its receipt shows up on your dashboard.
+
 ## PayPal and AI used
 
 - **PayPal:** Subscriptions and billing plans, Catalog products, Orders v2, the JavaScript SDK v6, Payouts, Webhooks, and Log in with PayPal, all in the sandbox.
@@ -49,7 +61,7 @@ pnpm --filter web paypal:setup --write           # creates the product and the t
 pnpm --filter web dev                            # http://localhost:3000, with a local database in apps/web/.data
 
 pnpm --filter upstream-pay build
-node packages/cli/plugin/dist/upstream.mjs init  # links this machine to your local Upstream
+node packages/cli/plugin/dist/upstream.mjs init --api-url http://localhost:3000  # links this machine to your local Upstream
 node packages/cli/plugin/dist/upstream.mjs dashboard
 ```
 
