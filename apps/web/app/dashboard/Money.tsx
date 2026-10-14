@@ -6,13 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { formatUsd } from "@/lib/format";
+import { groupGiven } from "@/lib/funding/given-groups";
 import type { GivenLine, GivenState, ProjectedShare } from "@/lib/funding/view";
 
 /** Where one maintainer's share is now, in a few words. */
 const STATE: Record<GivenState, { label: string; variant: "default" | "secondary" | "outline" }> = {
   waiting: { label: "Not joined yet", variant: "outline" },
-  held: { label: "Joined, paid next payout", variant: "secondary" },
-  "on-its-way": { label: "On its way via PayPal", variant: "default" },
+  held: { label: "Joined, payout coming", variant: "secondary" },
+  "on-its-way": { label: "On its way via PayPal", variant: "secondary" },
   paid: { label: "Paid via PayPal", variant: "default" },
   returned: { label: "Back in your budget", variant: "outline" },
 };
@@ -50,70 +51,66 @@ export function Projection(props: { shares: ProjectedShare[] }) {
 }
 
 /** "Where your money went": what settlements set aside, per package and maintainer, and where each share is now. */
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
 export function Given(props: { lines: GivenLine[] }) {
   if (props.lines.length === 0) return null;
-  const packages = new Map<string, { name: string; cents: number; lines: GivenLine[] }>();
-  for (const l of props.lines) {
-    const key = `${l.ecosystem}:${l.name}`;
-    const p = packages.get(key) ?? { name: l.name, cents: 0, lines: [] };
-    p.cents += l.cents;
-    p.lines.push(l);
-    packages.set(key, p);
-  }
-  const people = new Set(props.lines.map((l) => l.login)).size;
-  const waiting = props.lines.filter((l) => l.state === "waiting").reduce((sum, l) => sum + l.cents, 0);
-  const sorted = [...packages.values()].sort((a, b) => b.cents - a.cents || a.name.localeCompare(b.name));
+  const { groups, people, packages, waitingCents } = groupGiven(props.lines);
   return (
     <Card className="shadow-sm">
       <CardHeader>
         <CardTitle className="text-base font-semibold">Where your money went</CardTitle>
         <CardDescription>
-          Split across {people} maintainers of {packages.size} packages.
-          {waiting > 0 && ` ${formatUsd(waiting)} waits for maintainers who haven't joined Upstream yet. If nobody claims it in 90 days, it comes back to your budget.`}
+          Split across {count(people, "maintainer", "maintainers")} of {count(packages, "package", "packages")}.
+          {waitingCents > 0 &&
+            ` ${formatUsd(waitingCents)} waits for maintainers who haven't joined Upstream yet. If nobody claims it in 90 days, it comes back to your budget.`}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Accordion type="multiple">
-          {sorted.map((p) => {
-            const paid = p.lines.filter((l) => l.state === "paid" || l.state === "on-its-way").length;
-            return (
-              <AccordionItem key={p.name} value={p.name}>
-                <AccordionTrigger className="items-center hover:no-underline">
-                  <span className="flex flex-1 items-center gap-3 pr-2">
-                    <span className="font-medium">{p.name}</span>
-                    <span className="flex -space-x-2">
-                      {p.lines.slice(0, 4).map((l) => (
-                        <span key={l.login} className="rounded-full ring-2 ring-background">
-                          <GithubAvatar login={l.login} size="size-6" />
-                        </span>
-                      ))}
-                    </span>
-                    <span className="hidden text-xs font-normal text-muted-foreground sm:inline">
-                      {p.lines.length === 1 ? "1 maintainer" : `${p.lines.length} maintainers`}
-                    </span>
-                    {paid > 0 && <Badge className="text-[11px]">{paid} paid</Badge>}
-                    <span className="ml-auto font-semibold tabular-nums">{formatUsd(p.cents)}</span>
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ul className="grid gap-2.5">
-                    {p.lines.map((l) => (
-                      <li key={`${l.login}:${l.state}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                        <GithubAvatar login={l.login} size="size-7" />
-                        <a href={`https://github.com/${l.login}`} className="font-medium hover:text-primary hover:underline">
-                          @{l.login}
-                        </a>
-                        <Badge variant={STATE[l.state].variant} className="font-normal">
-                          {STATE[l.state].label}
-                        </Badge>
-                        <span className="ml-auto tabular-nums">{formatUsd(l.cents)}</span>
-                      </li>
+          {groups.map((p) => (
+            <AccordionItem key={`${p.ecosystem}:${p.name}`} value={`${p.ecosystem}:${p.name}`}>
+              <AccordionTrigger className="items-center hover:no-underline">
+                <span className="flex flex-1 items-center gap-3 pr-2">
+                  <span className="font-medium">{p.name}</span>
+                  <span className="flex -space-x-2">
+                    {p.logins.slice(0, 4).map((login) => (
+                      <span key={login} className="rounded-full ring-2 ring-background">
+                        <GithubAvatar login={login} size="size-6" />
+                      </span>
                     ))}
-                  </ul>
-                </AccordionContent>
-              </AccordionItem>
-            );
-          })}
+                  </span>
+                  <span className="hidden text-xs font-normal text-muted-foreground sm:inline">{count(p.logins.length, "maintainer", "maintainers")}</span>
+                  {p.paid > 0 ? (
+                    <Badge className="text-[11px]">{p.paid} paid</Badge>
+                  ) : (
+                    p.onItsWay > 0 && (
+                      <Badge variant="secondary" className="text-[11px]">
+                        On its way
+                      </Badge>
+                    )
+                  )}
+                  <span className="ml-auto font-semibold tabular-nums">{formatUsd(p.cents)}</span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <ul className="grid gap-2.5">
+                  {p.lines.map((l) => (
+                    <li key={`${l.login}:${l.state}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                      <GithubAvatar login={l.login} size="size-7" />
+                      <a href={`https://github.com/${l.login}`} className="font-medium hover:text-primary hover:underline">
+                        @{l.login}
+                      </a>
+                      <Badge variant={STATE[l.state].variant} className="font-normal">
+                        {STATE[l.state].label}
+                      </Badge>
+                      <span className="ml-auto tabular-nums">{formatUsd(l.cents)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
+          ))}
         </Accordion>
       </CardContent>
     </Card>
