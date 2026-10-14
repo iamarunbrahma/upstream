@@ -23,6 +23,9 @@ Upstream on Render, from the `render.yaml` Blueprint at commit 6a82702, then 7a9
 - **GitHub sign-in:** after adding the OAuth app's id and secret, `/maintainer/github/start` answers 302 to GitHub with client `Ov23li8BtRO5eo8mqqxt` and the hosted callback.
 - **PayPal webhook:** `09S714176K909483A` was registered through `/v1/notifications/webhooks` for 21 events: subscription, sale, capture, refund and reversal, and payout item. An unsigned event now answers 400 "bad signature" instead of 503 "not set up".
 
+- **Maintainer sign-in:** with the Log in with PayPal return URL saved in the developer dashboard, Arun signed in at `/maintainer` with GitHub as @iamarunbrahma and linked a sandbox PayPal account. The page came back with "PayPal is linked" and "Your first payout can go out from 2026-10-21", the 7-day hold. `/api/maintainer/me` agrees.
+- **CLI against the hosted site:** with the default API URL now the hosted one (caed668), `upstream init` registered a machine and `upstream dashboard` returned a one-time connect link that opened the dashboard page.
+
 ## The budget guard
 
 The guard runs every 3 hours in GitHub Actions with the `RENDER_API_KEY` secret.
@@ -39,7 +42,7 @@ The $50 "Hackathon Participant" credit is valid until 1 Oct 2027. Expected spend
 
 ## Still to check
 
-- Log in with PayPal on the hosted app, which needs the return URL in the developer dashboard.
-- Arun's sandbox maintainer linked; then, 7 days later, Settle now pays him through Payouts, and the webhook moves the line to "Paid".
+- From 21 Oct, Settle now pays Arun through Payouts, and the webhook moves the line to "Paid".
+- `upstream-pay` on npm: the publish was refused with 403 until the npm account has two-factor authentication.
 - A real subscription and a real refund arriving through the webhook.
 - `settle-pg.test.ts` against a throwaway Postgres.
