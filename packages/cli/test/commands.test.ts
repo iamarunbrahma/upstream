@@ -9,7 +9,8 @@ const fixturePath = new URL("./fixtures/session.jsonl", import.meta.url).pathnam
 
 const fakeApi = (submit: Api["submit"]): Api =>
   ({ submit, registerDevice: async () => ({ token: "t", accountId: "a" }), list: async () => ({ receipts: [] }),
-     get: async () => ({ receipt: view }), decide: async () => ({ receipt: view }) }) as Api;
+     get: async () => ({ receipt: view }), decide: async () => ({ receipt: view }),
+     loginLink: async () => ({ url: "http://up.test/connect?code=x" }) }) as Api;
 
 function deps(api: Api): CommandDeps & { outs: string[]; logs: string[] } {
   const outs: string[] = [];

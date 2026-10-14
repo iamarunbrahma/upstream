@@ -27,6 +27,7 @@ export function createApi(apiUrl: string, token: string | null, fetchImpl: typeo
     list: (status?: ReceiptStatus) => call<ListResponse>("GET", `/api/receipts${status ? `?status=${status}` : ""}`),
     get: (id: string) => call<{ receipt: ReceiptView }>("GET", `/api/receipts/${id}`),
     decide: (id: string, action: "approve" | "skip") => call<{ receipt: ReceiptView }>("POST", `/api/receipts/${id}/decision`, { action }),
+    loginLink: () => call<{ url: string }>("POST", "/api/login-links"),
   };
 }
 

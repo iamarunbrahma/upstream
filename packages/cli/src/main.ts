@@ -1,8 +1,9 @@
+import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { createApi } from "./api";
-import { initCommand, receiptCommand, scanCommand, type CommandDeps } from "./commands";
+import { dashboardCommand, initCommand, receiptCommand, scanCommand, type CommandDeps } from "./commands";
 import { loadConfig } from "./config";
 import { detachedLauncher, fileLogger, runSessionEndHook } from "./hook";
 import { serveMcp } from "./mcp";
@@ -93,6 +94,24 @@ program
       cwd: process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
       readFile: readSessionTranscript,
       findTranscript: (cwd) => latestTranscript(cwd),
+    });
+  });
+
+program
+  .command("dashboard")
+  .description("Open your Upstream dashboard in the browser (budget, subscription, receipts)")
+  .action(async () => {
+    const config = loadConfig();
+    process.exitCode = await dashboardCommand({
+      api: createApi(config.apiUrl, config.token),
+      out: (m) => console.log(m),
+      openUrl: (url) => {
+        try {
+          spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+        } catch {
+          // Opening a browser is a convenience; the link is already printed.
+        }
+      },
     });
   });
 

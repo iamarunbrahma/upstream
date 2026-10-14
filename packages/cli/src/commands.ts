@@ -75,3 +75,15 @@ export async function initCommand(opts: { apiUrl?: string; label?: string }, out
     return 1;
   }
 }
+
+export async function dashboardCommand(deps: { api: Api; out: (m: string) => void; openUrl: (url: string) => void }): Promise<number> {
+  try {
+    const { url } = await deps.api.loginLink();
+    deps.out(`Opening your Upstream dashboard:\n  ${url}\n(The link works once and expires in 10 minutes.)`);
+    deps.openUrl(url);
+    return 0;
+  } catch (e) {
+    deps.out(`Upstream: ${reason(e)}`);
+    return 1;
+  }
+}
