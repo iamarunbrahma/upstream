@@ -31,6 +31,21 @@ describe("createRateLimiter under a flood", () => {
   });
 });
 
+describe("createRateLimiter windows", () => {
+  it("doesn't let a caller double the limit across a window boundary", () => {
+    let t = 0;
+    const lim = createRateLimiter({ limit: 2, windowMs: 1000, now: () => t });
+    lim.take("a");
+    t = 990;
+    lim.take("a"); // limit used up at the end of the first window
+    let allowed = 0;
+    for (t = 1000; t <= 1002; t++) allowed += Number(lim.take("a"));
+    expect(allowed).toBe(1); // a plain fixed window would allow 2 more here
+    t = 2600;
+    expect(lim.take("a")).toBe(true);
+  });
+});
+
 describe("createRateLimiter cost", () => {
   it("handles a flood of new keys in constant time per call", () => {
     const lim = createRateLimiter({ limit: 1, windowMs: 60_000, maxKeys: 2000, now: () => 0 });
