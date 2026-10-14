@@ -244,3 +244,14 @@ Judges won't have Claude Code, a Gemini key or PayPal credentials, so the hosted
 - **Sandbox Payouts and Log in with PayPal permissions.** These get verified on day 1. If Log in with PayPal is blocked, the fallback is recipient `EMAIL` with a $0.01 verification payout.
 - **Gemini model availability and quota on the key.** Verified on day 1.
 - **"Who would pay?"** The pitch answers with opt-in budgets and company pledges. No made-up traction.
+
+## 16. Plan 3 decisions (14 Oct)
+
+Arun's answers, which update sections 8 and 9:
+
+- **Who the demo pays.** The sample session really uses `upstream-pay` itself (the agent adds it as a dev dependency so CI can send receipts for other agents). Its repo names Arun in `.github/FUNDING.yml`, and his sandbox maintainer account is linked. So **Settle now** really pays Arun in the sandbox, while the real maintainers' shares wait for them to join. This needs `upstream-pay` published to npm, which happens only after Arun says yes.
+- **The demo payout floor.** The hosted sandbox demo pays out any amount (`MIN_PAYOUT_CENTS=1`), and says so on screen and in the testing notes. The real rule stays $1.
+- **Judges get a fresh demo account each.** "Try the demo" makes a new, empty funder account in that browser, so judges never see each other's clicks. Only demo accounts get "Run a sample session" and "Settle now", and Settle now settles only that account's budget.
+- **Render Workflows** run the settlement, the payout checks and the AI judge, with a cron and the Settle now button triggering them (Plan 3b).
+- **The index chart's usage numbers** come from the real upstream scanner run over Arun's own past Claude Code sessions on his Mac. Only package names and counts are kept, packages must exist on the public npm or PyPI registry and appear in at least 3 sessions, and Arun sees the list before it is published. The funding side is what Upstream has set aside per package, live.
+- **Look:** calm and trustworthy. Light, lots of white space, one green accent.
