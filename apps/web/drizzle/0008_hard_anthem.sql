@@ -1,0 +1,1 @@
+ALTER TABLE "settlements" ADD COLUMN "send_claimed_at" timestamp with time zone;

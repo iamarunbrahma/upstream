@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { accruals, fundingEvents, maintainers, payoutItems, settlements, subscriptions } from "../db/schema";
 import type { PayPalApi } from "../paypal/api";
@@ -24,6 +24,8 @@ export const UNCLAIMED_RETURN_MS = 90 * DAY;
  * have reached PayPal is retried for 25 days, then left for a person to check, so it can never go out twice.
  */
 export const RESEND_WINDOW_MS = 25 * DAY;
+/** A run claims a batch before sending it. A claim this old belongs to a run that stopped mid-send, and is taken over. */
+export const SEND_CLAIM_MS = 10 * 60 * 1000;
 
 /**
  * Whether an accrual belongs to maintainer `m`: only by GitHub account, never by login, since a login can
@@ -161,55 +163,79 @@ async function lineNote(db: Db, lineId: string): Promise<string> {
 /**
  * Sends each settlement's payout lines that PayPal hasn't taken yet, as one batch whose sender_batch_id is the
  * settlement id. PayPal refuses that id twice, so repeating this never pays twice. A failure leaves the lines
- * for the next run.
+ * for the next run. Each batch is claimed first, so two runs at the same moment (two "Settle now" presses, or one and
+ * the scheduled job) never both send it.
  */
 export async function payOut(deps: PayoutDeps): Promise<SendResult[]> {
   const now = deps.now?.() ?? new Date();
   const waiting = await deps.db
-    .selectDistinct({ id: settlements.id, sendStartedAt: settlements.sendStartedAt })
+    .selectDistinct({ id: settlements.id })
     .from(settlements)
     .innerJoin(payoutItems, eq(payoutItems.settlementId, settlements.id))
     .where(and(isNull(settlements.payoutBatchId), isNull(settlements.batchStatus)));
   const results: SendResult[] = [];
-  for (const { id, sendStartedAt } of waiting) {
-    if (sendStartedAt && now.getTime() - sendStartedAt.getTime() >= RESEND_WINDOW_MS) {
-      await deps.db.update(settlements).set({ batchStatus: "NEEDS_CHECK" }).where(eq(settlements.id, id));
-      results.push({ settlementId: id, outcome: "needs-check" });
-      continue;
-    }
-    if (!sendStartedAt) await deps.db.update(settlements).set({ sendStartedAt: now }).where(eq(settlements.id, id));
-    const lines = await deps.db.select().from(payoutItems).where(eq(payoutItems.settlementId, id)).orderBy(payoutItems.login);
+  for (const { id } of waiting) {
+    const [claimed] = await deps.db
+      .update(settlements)
+      .set({ sendClaimedAt: now })
+      .where(
+        and(
+          eq(settlements.id, id),
+          isNull(settlements.payoutBatchId),
+          isNull(settlements.batchStatus),
+          or(isNull(settlements.sendClaimedAt), lt(settlements.sendClaimedAt, new Date(now.getTime() - SEND_CLAIM_MS))),
+        ),
+      )
+      .returning({ sendStartedAt: settlements.sendStartedAt });
+    if (!claimed) continue; // Another run is sending it, or just did.
     try {
-      const notes = await Promise.all(lines.map((l) => lineNote(deps.db, l.id)));
-      const batch = await deps.paypal.createPayoutBatch(
-        id,
-        lines.map((l, i) => ({ senderItemId: l.id, payerId: l.payerId, cents: l.cents, note: notes[i]! })),
-      );
-      await deps.db
-        .update(settlements)
-        .set({ payoutBatchId: batch.batch_header.payout_batch_id, batchStatus: batch.batch_header.batch_status })
-        .where(eq(settlements.id, id));
-      results.push({ settlementId: id, outcome: "sent", batchId: batch.batch_header.payout_batch_id });
-    } catch (e) {
-      if (isDuplicateBatch(e)) {
-        // PayPal already has this batch, from a try whose answer was lost. Its answer links the batch; if it
-        // ever doesn't, the batch's payout webhooks carry the id and fill it in.
-        const batchId = linkedBatchId(e);
-        await deps.db.update(settlements).set({ payoutBatchId: batchId, batchStatus: "UNKNOWN" }).where(eq(settlements.id, id));
-        results.push({ settlementId: id, outcome: "sent-before", ...(batchId ? { batchId } : {}) });
-      } else if (e instanceof PayPalError) {
-        // A 4xx is PayPal refusing outright: no batch exists, so this try doesn't start the resend clock.
-        // A timeout, dropped connection or 5xx may have reached PayPal, so the clock keeps running.
-        if (e.status >= 400 && e.status < 500 && !sendStartedAt) {
-          await deps.db.update(settlements).set({ sendStartedAt: null }).where(eq(settlements.id, id));
-        }
-        results.push({ settlementId: id, outcome: "failed", error: `${e.status} ${e.code}` });
-      } else {
-        throw e;
-      }
+      results.push(await sendBatch(deps, id, claimed.sendStartedAt, now));
+    } finally {
+      await deps.db.update(settlements).set({ sendClaimedAt: null }).where(eq(settlements.id, id));
     }
   }
   return results;
+}
+
+/** Sends one claimed settlement's batch. */
+async function sendBatch(deps: PayoutDeps, id: string, sendStartedAt: Date | null, now: Date): Promise<SendResult> {
+  if (sendStartedAt && now.getTime() - sendStartedAt.getTime() >= RESEND_WINDOW_MS) {
+    await deps.db.update(settlements).set({ batchStatus: "NEEDS_CHECK" }).where(eq(settlements.id, id));
+    return { settlementId: id, outcome: "needs-check" };
+  }
+  if (!sendStartedAt) await deps.db.update(settlements).set({ sendStartedAt: now }).where(eq(settlements.id, id));
+  const lines = await deps.db.select().from(payoutItems).where(eq(payoutItems.settlementId, id)).orderBy(payoutItems.login);
+  try {
+    const notes = await Promise.all(lines.map((l) => lineNote(deps.db, l.id)));
+    const batch = await deps.paypal.createPayoutBatch(
+      id,
+      lines.map((l, i) => ({ senderItemId: l.id, payerId: l.payerId, cents: l.cents, note: notes[i]! })),
+    );
+    await deps.db
+      .update(settlements)
+      .set({ payoutBatchId: batch.batch_header.payout_batch_id, batchStatus: batch.batch_header.batch_status })
+      .where(eq(settlements.id, id));
+    return { settlementId: id, outcome: "sent", batchId: batch.batch_header.payout_batch_id };
+  } catch (e) {
+    if (isDuplicateBatch(e)) {
+      // PayPal already has this batch, from a try whose answer was lost. Its answer links the batch; if it
+      // ever doesn't, the batch's payout webhooks carry the id and fill it in.
+      const batchId = linkedBatchId(e);
+      await deps.db
+        .update(settlements)
+        .set({ payoutBatchId: batchId, batchStatus: "UNKNOWN" })
+        .where(and(eq(settlements.id, id), isNull(settlements.payoutBatchId)));
+      return { settlementId: id, outcome: "sent-before", ...(batchId ? { batchId } : {}) };
+    } else if (e instanceof PayPalError) {
+      // A 4xx is PayPal refusing outright: no batch exists, so this try doesn't start the resend clock.
+      // A timeout, dropped connection or 5xx may have reached PayPal, so the clock keeps running.
+      if (e.status >= 400 && e.status < 500 && !sendStartedAt) {
+        await deps.db.update(settlements).set({ sendStartedAt: null }).where(eq(settlements.id, id));
+      }
+      return { settlementId: id, outcome: "failed", error: `${e.status} ${e.code}` };
+    }
+    throw e;
+  }
 }
 
 /**

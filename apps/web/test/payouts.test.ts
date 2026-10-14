@@ -3,10 +3,10 @@ import type { Db } from "../lib/db/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { accruals, maintainers, payoutItems, settlements } from "../lib/db/schema";
 import { balanceCents } from "../lib/funding/ledger";
-import { FIRST_PAYOUT_HOLD_MS, MIN_PAYOUT_CENTS, payOut, payoutFloorCents, queuePayouts, resolvePayoutCheck } from "../lib/funding/payouts";
+import { FIRST_PAYOUT_HOLD_MS, MIN_PAYOUT_CENTS, payOut, payoutFloorCents, queuePayouts, resolvePayoutCheck, SEND_CLAIM_MS } from "../lib/funding/payouts";
 import { settle } from "../lib/funding/settle";
 import { PayPalError } from "../lib/paypal/client";
-import { DAY, settlementWorld } from "./settle-fixtures";
+import { DAY, NOW, settlementWorld } from "./settle-fixtures";
 
 let w: Awaited<ReturnType<typeof settlementWorld>>;
 beforeEach(async () => {
@@ -142,6 +142,31 @@ describe("payOut", () => {
     expect(batches()).toHaveLength(1);
     const [s] = await w.db.select().from(settlements);
     expect(s!.payoutBatchId).toBe(batches()[0]!.id);
+  });
+
+  it("sends a settlement's batch from only one of two runs at the same moment, and keeps its id", async () => {
+    const f = await w.funder(1000);
+    await w.receipt(f, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 8);
+    await settle(w.deps);
+    const [a, b] = await Promise.all([payOut(w.deps), payOut(w.deps)]);
+    expect([...a, ...b].map((r) => r.outcome)).toEqual(["sent"]);
+    expect(w.paypal.calls.filter((c) => c === "createPayoutBatch")).toHaveLength(1);
+    const [s] = await w.db.select().from(settlements);
+    expect(s).toMatchObject({ payoutBatchId: batches()[0]!.id, batchStatus: "PENDING" });
+  });
+
+  it("leaves a batch another run is sending alone, and takes it over if that run stopped 10 minutes ago", async () => {
+    const f = await w.funder(1000);
+    await w.receipt(f, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 8);
+    const run = await settle(w.deps);
+    await w.db.update(settlements).set({ sendClaimedAt: new Date(NOW.getTime() - 60_000) }).where(eq(settlements.id, run.settlementId));
+    expect(await payOut(w.deps)).toEqual([]);
+    await w.db.update(settlements).set({ sendClaimedAt: new Date(NOW.getTime() - SEND_CLAIM_MS - 1) }).where(eq(settlements.id, run.settlementId));
+    expect(await payOut(w.deps)).toMatchObject([{ outcome: "sent" }]);
+    const [s] = await w.db.select().from(settlements);
+    expect(s!.sendClaimedAt).toBeNull();
   });
 
   it("won't resend a batch it may have sent more than 25 days ago, and asks for a check instead", async () => {

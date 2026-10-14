@@ -159,6 +159,8 @@ export const settlements = pgTable("settlements", {
   createdAt: createdAt(),
   /** When we first asked PayPal to send this batch. PayPal refuses a repeated sender_batch_id for only 30 days. */
   sendStartedAt: timestamp("send_started_at", tz),
+  /** Set while one run is sending this batch, so two runs never send it at once. A run that stopped mid-send loses it after 10 minutes. */
+  sendClaimedAt: timestamp("send_claimed_at", tz),
   payoutBatchId: text("payout_batch_id"),
   batchStatus: text("batch_status"),
 });
