@@ -1,4 +1,4 @@
-import type { PayPalApi, PaypalOrder, PaypalSubscription, PaypalSubscriptionTxn, WebhookVerification } from "./api";
+import type { PayoutLine, PayPalApi, PaypalOrder, PaypalPayoutItem, PaypalSubscription, PaypalSubscriptionTxn, WebhookVerification } from "./api";
 import { PayPalError } from "./client";
 import { fromCents } from "./money";
 
@@ -10,7 +10,9 @@ export class FakePayPal implements PayPalApi {
   plans = new Map<string, { id: string; name: string; status: string; productId: string; cents: number }>();
   subscriptions = new Map<string, PaypalSubscription & { transactions: PaypalSubscriptionTxn[] }>();
   orders = new Map<string, PaypalOrder & { cents: number; approvedBy: string | null }>();
+  payoutBatches = new Map<string, { id: string; senderBatchId: string; status: string; items: PaypalPayoutItem[] }>();
   private failures = new Map<string, Error>();
+  private lostAnswers = new Set<string>();
   private seq = 0;
 
   private next(prefix: string): string {
@@ -30,6 +32,16 @@ export class FakePayPal implements PayPalApi {
   /** Make the next call to `method` throw `error`. */
   failNext(method: keyof PayPalApi, error: Error): void {
     this.failures.set(method, error);
+  }
+
+  /** The next call to `method` takes effect at PayPal, but its answer never arrives (a timeout). */
+  loseNextAnswer(method: keyof PayPalApi): void {
+    this.lostAnswers.add(method);
+  }
+
+  private answer<T>(method: string, value: T): T {
+    if (this.lostAnswers.delete(method)) throw new PayPalError(504, "TIMEOUT", "PayPal took too long to answer", null);
+    return value;
   }
 
   async findProductByName(name: string) {
@@ -154,5 +166,43 @@ export class FakePayPal implements PayPalApi {
   async verifyWebhookSignature(input: WebhookVerification) {
     this.enter("verifyWebhookSignature");
     return this.signatureValid && Boolean(input.headers["paypal-transmission-sig"]);
+  }
+
+  async createPayoutBatch(senderBatchId: string, lines: PayoutLine[]) {
+    this.enter("createPayoutBatch");
+    // Like the real API: the same sender_batch_id twice is refused, whatever the request id.
+    if ([...this.payoutBatches.values()].some((b) => b.senderBatchId === senderBatchId)) {
+      throw new PayPalError(400, "Batch with given sender_batch_id already exists", "User business error.", null);
+    }
+    const id = this.next("BATCH-");
+    const items = lines.map((l) => ({
+      payout_item_id: this.next("PI-"),
+      transaction_status: "PENDING",
+      payout_batch_id: id,
+      payout_item_fee: { currency: "USD", value: "0.25" },
+      payout_item: { recipient_type: "PAYPAL_ID", receiver: l.payerId, sender_item_id: l.senderItemId, amount: { currency: "USD", value: fromCents(l.cents) } },
+    }));
+    this.payoutBatches.set(id, { id, senderBatchId, status: "PENDING", items });
+    return this.answer("createPayoutBatch", { batch_header: { payout_batch_id: id, batch_status: "PENDING", sender_batch_header: { sender_batch_id: senderBatchId } } });
+  }
+
+  async getPayoutBatch(id: string) {
+    this.enter("getPayoutBatch");
+    const b = this.payoutBatches.get(id);
+    if (!b) throw new PayPalError(404, "INVALID_RESOURCE_ID", "batch not found", null);
+    return { batch_header: { payout_batch_id: b.id, batch_status: b.status }, items: b.items.map((i) => structuredClone(i)) };
+  }
+
+  /** PayPal finishes (or fails) one payout line. */
+  setPayoutItemStatus(senderItemId: string, status: string): PaypalPayoutItem {
+    for (const b of this.payoutBatches.values()) {
+      const item = b.items.find((i) => i.payout_item?.sender_item_id === senderItemId);
+      if (item) {
+        item.transaction_status = status;
+        b.status = b.items.every((i) => i.transaction_status !== "PENDING") ? "SUCCESS" : "PROCESSING";
+        return structuredClone(item);
+      }
+    }
+    throw new Error(`no payout line ${senderItemId}`);
   }
 }

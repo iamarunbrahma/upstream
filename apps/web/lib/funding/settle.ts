@@ -4,6 +4,7 @@ import type { Db } from "../db/client";
 import { accruals, receiptItems, receipts, settlements, type RepoRecipients } from "../db/schema";
 import type { RepoRef } from "../resolver/github";
 import { balanceCents } from "./ledger";
+import { queuePayouts, type QueueSummary } from "./payouts";
 import { splitCents } from "./split";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -23,7 +24,7 @@ export interface SettleDeps {
   now?: () => Date;
 }
 
-export interface SettleSummary {
+export interface SettleSummary extends QueueSummary {
   settlementId: string;
   expiredReceipts: number;
   /** Funders whose approved receipts were settled in this run. */
@@ -106,7 +107,10 @@ async function settleFunder(tx: Db, settlementId: string, funderId: string, foun
   return rows.reduce((sum, r) => sum + r.cents, 0);
 }
 
-/** One settlement run: drops stale proposals, then settles every funder with approved receipts. Safe to run twice. */
+/**
+ * One settlement run: drops stale proposals, settles every funder with approved receipts, then puts what's
+ * owed on payout lines (sent by payOut). Safe to run twice: each receipt and each accrual is spent once.
+ */
 export async function settle(deps: SettleDeps): Promise<SettleSummary> {
   const now = deps.now?.() ?? new Date();
   const found = await lookUpPackages(deps);
@@ -122,7 +126,7 @@ export async function settle(deps: SettleDeps): Promise<SettleSummary> {
       .selectDistinct({ id: receipts.accountId })
       .from(receipts)
       .where(and(eq(receipts.status, "approved"), isNull(receipts.settlementId)));
-    const summary: SettleSummary = { settlementId: run!.id, expiredReceipts: expired.length, settledFunders: 0, waitingFunders: 0, setAsideCents: 0 };
+    const summary = { settlementId: run!.id, expiredReceipts: expired.length, settledFunders: 0, waitingFunders: 0, setAsideCents: 0 };
     for (const f of funders) {
       const cents = await settleFunder(tx as unknown as Db, run!.id, f.id, found, now);
       if (cents === null) summary.waitingFunders += 1;
@@ -131,6 +135,6 @@ export async function settle(deps: SettleDeps): Promise<SettleSummary> {
         summary.setAsideCents += cents;
       }
     }
-    return summary;
+    return { ...summary, ...(await queuePayouts(tx as unknown as Db, run!.id, now)) };
   });
 }

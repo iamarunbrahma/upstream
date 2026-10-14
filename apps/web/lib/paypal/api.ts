@@ -38,6 +38,33 @@ export interface PaypalOrder {
   purchase_units?: Array<{ custom_id?: string; payments?: { captures?: PaypalCapture[] } }>;
 }
 
+/** One Payouts line: `cents` to the PayPal account `payerId`. `senderItemId` is our own id for the line. */
+export interface PayoutLine {
+  senderItemId: string;
+  payerId: string;
+  cents: number;
+  note: string;
+}
+
+/** Payouts amounts use `currency`, not `currency_code` like the rest of the API. */
+export interface PayoutMoney {
+  currency: string;
+  value: string;
+}
+
+export interface PaypalPayoutItem {
+  payout_item_id?: string;
+  transaction_status?: string;
+  payout_batch_id?: string;
+  payout_item_fee?: PayoutMoney;
+  payout_item?: { recipient_type?: string; receiver?: string; sender_item_id?: string; amount?: PayoutMoney };
+}
+
+export interface PaypalPayoutBatch {
+  batch_header: { payout_batch_id: string; batch_status: string; sender_batch_header?: { sender_batch_id?: string } };
+  items?: PaypalPayoutItem[];
+}
+
 export interface WebhookVerification {
   headers: Record<string, string | null>;
   webhookId: string;
@@ -56,6 +83,9 @@ export interface PayPalApi {
   getOrder(id: string): Promise<PaypalOrder>;
   captureOrder(id: string): Promise<PaypalOrder>;
   verifyWebhookSignature(input: WebhookVerification): Promise<boolean>;
+  /** PayPal refuses a second batch with the same `senderBatchId`, which is what makes sending safe to repeat. */
+  createPayoutBatch(senderBatchId: string, lines: PayoutLine[]): Promise<PaypalPayoutBatch>;
+  getPayoutBatch(batchId: string): Promise<PaypalPayoutBatch>;
 }
 
 const WEBHOOK_HEADERS = ["paypal-auth-algo", "paypal-cert-url", "paypal-transmission-id", "paypal-transmission-sig", "paypal-transmission-time"] as const;
@@ -134,6 +164,25 @@ export function createPayPalApi(http: PayPalHttp): PayPalApi {
         webhook_event: event,
       });
       return res.verification_status === "SUCCESS";
+    },
+    createPayoutBatch(senderBatchId, lines) {
+      return http.request("POST", "/v1/payments/payouts", {
+        sender_batch_header: {
+          sender_batch_id: senderBatchId,
+          email_subject: "You've received money from Upstream",
+          email_message: "Developers whose AI coding agents used your open-source work are saying thanks.",
+        },
+        items: lines.map((l) => ({
+          recipient_type: "PAYPAL_ID",
+          receiver: l.payerId,
+          amount: { value: fromCents(l.cents), currency: "USD" },
+          sender_item_id: l.senderItemId,
+          note: l.note,
+        })),
+      });
+    },
+    getPayoutBatch(batchId) {
+      return http.request("GET", `/v1/payments/payouts/${id(batchId)}?page_size=1000`);
     },
   };
 }

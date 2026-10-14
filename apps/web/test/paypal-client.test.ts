@@ -116,6 +116,25 @@ describe("createPayPalApi", () => {
     expect(f.calls[4]!.url).toBe("https://api.test/v1/billing/subscriptions/I-SUB/transactions?start_time=2026-10-01T00%3A00%3A00.000Z&end_time=2026-10-14T00%3A00%3A00.000Z");
   });
 
+  it("builds the Payouts requests PayPal expects, paying verified PayPal accounts by id", async () => {
+    const f = fakeFetch([
+      token,
+      { status: 201, body: { batch_header: { payout_batch_id: "B-1", batch_status: "PENDING", sender_batch_header: { sender_batch_id: "settle-1" } } } },
+      { status: 200, body: { batch_header: { payout_batch_id: "B-1", batch_status: "SUCCESS" }, items: [{ payout_item_id: "PI-1", transaction_status: "SUCCESS" }] } },
+    ]);
+    const api = createPayPalApi(createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: f.impl }));
+    const sent = await api.createPayoutBatch("settle-1", [{ senderItemId: "line-1", payerId: "PAYER-A", cents: 540, note: "For your work on fastapi" }]);
+    const got = await api.getPayoutBatch("B-1");
+    expect(sent.batch_header.payout_batch_id).toBe("B-1");
+    expect(got.items?.[0]?.transaction_status).toBe("SUCCESS");
+    expect(JSON.parse(String(f.calls[1]!.init.body))).toMatchObject({
+      sender_batch_header: { sender_batch_id: "settle-1" },
+      items: [{ recipient_type: "PAYPAL_ID", receiver: "PAYER-A", amount: { value: "5.40", currency: "USD" }, sender_item_id: "line-1", note: "For your work on fastapi" }],
+    });
+    expect(f.calls[1]!.url).toBe("https://api.test/v1/payments/payouts");
+    expect(f.calls[2]!.url).toBe("https://api.test/v1/payments/payouts/B-1?page_size=1000");
+  });
+
   it("treats missing webhook headers as a failed verification without calling PayPal", async () => {
     const f = fakeFetch([]);
     const api = createPayPalApi(createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: f.impl }));
