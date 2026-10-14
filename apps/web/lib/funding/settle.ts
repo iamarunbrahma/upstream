@@ -35,16 +35,22 @@ export interface SettleSummary extends QueueSummary {
   setAsideCents: number;
 }
 
+export interface SettleOptions {
+  /** Settle only this funder's budget ("Settle now" in the demo); everyone else waits for the scheduled run. */
+  funderId?: string;
+}
+
 type Lookup = RepoRecipients | "later" | null;
 const keyOf = (ecosystem: string, name: string) => `${ecosystem}:${name}`;
+const forFunder = (opts: SettleOptions) => (opts.funderId ? eq(receipts.accountId, opts.funderId) : undefined);
 
 /** Looks up every package that unsettled approved receipts mention. Network calls happen here, outside the lock. */
-async function lookUpPackages(deps: SettleDeps): Promise<Map<string, Lookup>> {
+async function lookUpPackages(deps: SettleDeps, opts: SettleOptions): Promise<Map<string, Lookup>> {
   const pkgs = await deps.db
     .selectDistinct({ ecosystem: receiptItems.ecosystem, name: receiptItems.name })
     .from(receiptItems)
     .innerJoin(receipts, eq(receipts.id, receiptItems.receiptId))
-    .where(and(eq(receipts.status, "approved"), isNull(receipts.settlementId)));
+    .where(and(eq(receipts.status, "approved"), isNull(receipts.settlementId), forFunder(opts)));
   const found = new Map<string, Lookup>();
   for (const p of pkgs) {
     const repo = await deps.repoFor(p.ecosystem, p.name);
@@ -114,9 +120,9 @@ async function settleFunder(tx: Db, settlementId: string, funderId: string, foun
  * One settlement run: drops stale proposals, settles every funder with approved receipts, then puts what's
  * owed on payout lines (sent by payOut). Safe to run twice: each receipt and each accrual is spent once.
  */
-export async function settle(deps: SettleDeps): Promise<SettleSummary> {
+export async function settle(deps: SettleDeps, opts: SettleOptions = {}): Promise<SettleSummary> {
   const now = deps.now?.() ?? new Date();
-  const found = await lookUpPackages(deps);
+  const found = await lookUpPackages(deps, opts);
   // The lock keeps two settlement runs from spending the same budget.
   return withSettleLock(deps.db, async (tx) => {
     const [run] = await tx.insert(settlements).values({ createdAt: now }).returning({ id: settlements.id });
@@ -128,7 +134,7 @@ export async function settle(deps: SettleDeps): Promise<SettleSummary> {
     const funders = await tx
       .selectDistinct({ id: receipts.accountId })
       .from(receipts)
-      .where(and(eq(receipts.status, "approved"), isNull(receipts.settlementId)));
+      .where(and(eq(receipts.status, "approved"), isNull(receipts.settlementId), forFunder(opts)));
     const summary = { settlementId: run!.id, expiredReceipts: expired.length, settledFunders: 0, waitingFunders: 0, setAsideCents: 0 };
     for (const f of funders) {
       const cents = await settleFunder(tx, run!.id, f.id, found, now);

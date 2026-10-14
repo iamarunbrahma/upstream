@@ -5,7 +5,7 @@ import { lookupPackage } from "../resolver/cache";
 import { recipientsFor, type GithubGet } from "../resolver/recipients";
 import { reconcilePayouts } from "./payout-status";
 import { payOut, payoutFloorCents, type PayoutDeps, type SendResult } from "./payouts";
-import { settle, type SettleDeps, type SettleSummary } from "./settle";
+import { settle, type SettleDeps, type SettleOptions, type SettleSummary } from "./settle";
 
 export type RunDeps = SettleDeps & PayoutDeps;
 
@@ -40,10 +40,10 @@ export async function runPayouts(deps: RunDeps): Promise<PayoutRunReport> {
   return { reconciledLines: checked.updated, uncheckedBatches: checked.unreachable, sent: await payOut(deps) };
 }
 
-/** The whole job: catch up on payout statuses with PayPal, settle, then send payouts. */
-export async function runSettlement(deps: RunDeps): Promise<RunReport> {
+/** The whole job: catch up on payout statuses with PayPal, settle (everyone, or one funder), then send payouts. */
+export async function runSettlement(deps: RunDeps, opts: SettleOptions = {}): Promise<RunReport> {
   const checked = await reconcilePayouts(deps);
-  const summary = await settle(deps);
+  const summary = await settle(deps, opts);
   return { ...summary, reconciledLines: checked.updated, uncheckedBatches: checked.unreachable, sent: await payOut(deps) };
 }
 

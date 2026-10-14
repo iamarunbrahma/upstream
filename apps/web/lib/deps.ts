@@ -37,6 +37,7 @@ export function getDeps(): Promise<Deps> {
       deviceLimiter: createRateLimiter({ limit: 10, windowMs: hour }),
       signInLimiter: createRateLimiter({ limit: 30, windowMs: hour }),
       demoStartLimiter: createRateLimiter({ limit: 10, windowMs: hour }),
+      demoSettleLimiter: createRateLimiter({ limit: 30, windowMs: hour }),
       paypal:
         process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET
           ? createPayPalApi(

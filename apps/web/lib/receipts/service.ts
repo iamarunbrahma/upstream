@@ -26,6 +26,8 @@ export interface Deps {
   signInLimiter?: RateLimiter;
   /** Per-client cap on "Try the demo" accounts. */
   demoStartLimiter?: RateLimiter;
+  /** Per-account cap on the demo's "Settle now". */
+  demoSettleLimiter?: RateLimiter;
   /** PayPal REST client; null when the server has no PayPal credentials. */
   paypal?: PayPalApi | null;
   planIds?: Partial<Record<TierKey, string>>;
