@@ -3,6 +3,8 @@ import { createPgDb, createPgliteDb } from "./db/client";
 import { migrateDb } from "./db/migrate";
 import { createGeminiModel } from "./judge/gemini";
 import { createRateLimiter } from "./limits";
+import { createGithubOAuth } from "./maintainers/github-oauth";
+import { createPayPalIdentity } from "./maintainers/paypal-identity";
 import { createPayPalApi } from "./paypal/api";
 import { createPayPalHttp, paypalApiBase } from "./paypal/client";
 import { planIdsFromEnv } from "./paypal/plans";
@@ -45,6 +47,18 @@ export function getDeps(): Promise<Deps> {
           : null,
       planIds: planIdsFromEnv(),
       webhookId: process.env.PAYPAL_WEBHOOK_ID ?? null,
+      githubOAuth:
+        process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+          ? createGithubOAuth({ clientId: process.env.GITHUB_CLIENT_ID, clientSecret: process.env.GITHUB_CLIENT_SECRET })
+          : null,
+      paypalIdentity:
+        process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET
+          ? createPayPalIdentity({
+              clientId: process.env.PAYPAL_CLIENT_ID,
+              clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+              apiBase: paypalApiBase(process.env.PAYPAL_API_BASE),
+            })
+          : null,
     };
   })();
   return depsPromise;

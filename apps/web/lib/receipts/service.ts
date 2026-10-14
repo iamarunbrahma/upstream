@@ -11,6 +11,8 @@ import type { TierKey } from "../paypal/plans";
 import type { HttpGetJson } from "../resolver/registry";
 import { shouldAutoApprove } from "../funding/settings";
 import { toView } from "./view";
+import type { GithubOAuth } from "../maintainers/github-oauth";
+import type { PayPalIdentity } from "../maintainers/paypal-identity";
 
 export interface Deps {
   db: Db;
@@ -25,6 +27,10 @@ export interface Deps {
   planIds?: Partial<Record<TierKey, string>>;
   /** The id PayPal gave our webhook, needed to verify webhook signatures. */
   webhookId?: string | null;
+  /** GitHub sign-in for maintainers; null when the server has no GitHub OAuth app. */
+  githubOAuth?: GithubOAuth | null;
+  /** Log in with PayPal, for maintainers linking where they're paid; null without PayPal credentials. */
+  paypalIdentity?: PayPalIdentity | null;
 }
 
 /** A session's receipt is re-judged at most this many times, so re-submitting can't burn model quota. */
