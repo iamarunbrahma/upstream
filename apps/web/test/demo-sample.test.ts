@@ -44,7 +44,7 @@ describe("the sample session", () => {
     expect(p.sessionId.startsWith("sample:")).toBe(true);
     expect(p.agent).toBe("claude-code");
     expect(p.endedAt).toBe("2026-10-14T10:00:00.000Z");
-    expect(p.packages.map((x) => x.name)).toEqual(expect.arrayContaining(["hono", "zod", "nanoid", "vitest"]));
+    expect(p.packages.map((x) => x.name)).toEqual(expect.arrayContaining(["hono", "zod", "nanoid", "vitest", "upstream-pay"]));
   });
 
   it("runs once per demo account through the real receipt pipeline, and a second press shows the same receipt", async () => {
