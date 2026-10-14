@@ -98,7 +98,7 @@ async function settleFunder(tx: Db, settlementId: string, funderId: string, foun
       const cents = Math.min(parts[j]!, room);
       if (cents <= 0) return;
       given.set(r.login, (given.get(r.login) ?? 0) + cents);
-      rows.push({ settlementId, funderId, login: r.login, ecosystem: w.ecosystem, name: w.name, cents, createdAt: now });
+      rows.push({ settlementId, funderId, login: r.login, githubId: r.githubId ?? null, ecosystem: w.ecosystem, name: w.name, cents, createdAt: now });
     });
   });
   if (rows.length > 0) await tx.insert(accruals).values(rows);

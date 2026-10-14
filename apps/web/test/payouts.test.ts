@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import type { Db } from "../lib/db/client";
 import { beforeEach, describe, expect, it } from "vitest";
-import { accruals, payoutItems, settlements } from "../lib/db/schema";
+import { accruals, maintainers, payoutItems, settlements } from "../lib/db/schema";
 import { balanceCents } from "../lib/funding/ledger";
 import { FIRST_PAYOUT_HOLD_MS, payOut, queuePayouts, resolvePayoutCheck } from "../lib/funding/payouts";
 import { settle } from "../lib/funding/settle";
@@ -71,6 +71,26 @@ describe("queuePayouts", () => {
     const [line] = await w.db.select().from(payoutItems).where(eq(payoutItems.settlementId, run!.id));
     const [linked] = await w.db.select({ total: sql<number>`sum(${accruals.cents})::int` }).from(accruals).where(eq(accruals.payoutItemId, line!.id));
     expect(line!.cents).toBe(linked!.total);
+  });
+});
+
+describe("paying the right person", () => {
+  it("pays the GitHub account that earned the money, even after a rename and a reused name", async () => {
+    const f = await w.funder(1000);
+    w.lookups["npm:b"] = { source: "committers", recipients: [{ login: "bob", githubId: 5, shareBp: 10_000 }] };
+    await w.receipt(f, { b: 10_000 });
+    await settle(w.deps);
+    const [a] = await w.db.select().from(accruals);
+    expect(a).toMatchObject({ login: "bob", githubId: 5 });
+    // Then Bob (account 5) renamed to "bobby"; Carol (account 6) took the free name "bob". Both linked PayPal.
+    const linked = new Date(Date.now() - 30 * DAY);
+    await w.db.insert(maintainers).values([
+      { login: "bobby", githubId: 5, paypalPayerId: "PAYER-BOB", claimedAt: linked },
+      { login: "bob", githubId: 6, paypalPayerId: "PAYER-CAROL", claimedAt: linked },
+    ]);
+    await settle(w.deps);
+    await payOut(w.deps);
+    expect(batches()[0]!.items.map((i) => [i.payout_item?.receiver, i.payout_item?.amount?.value])).toEqual([["PAYER-BOB", "10.00"]]);
   });
 });
 

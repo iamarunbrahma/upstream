@@ -5,6 +5,7 @@ import { createPgliteDb, type Db } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
 import { accruals, maintainers, payoutItems, recipientCache, settlements } from "../lib/db/schema";
 import { linkPayPal, signInMaintainer } from "../lib/maintainers/claims";
+import { maintainerSummary } from "../lib/maintainers/summary";
 import { maintainerForSession } from "../lib/maintainers/sessions";
 
 const NOW = new Date("2026-10-14T10:00:00Z");
@@ -25,19 +26,18 @@ describe("signInMaintainer", () => {
     expect(await db.select().from(maintainers)).toHaveLength(1);
   });
 
-  it("follows a renamed GitHub login, and moves what they're owed along with it", async () => {
+  it("follows a renamed GitHub login, and what they earned stays theirs without moving", async () => {
     await signInMaintainer(db, { id: 7, login: "alice" }, NOW);
     const { accountId } = await createDevice(db, null);
     const [s] = await db.insert(settlements).values({}).returning();
     const [line] = await db.insert(payoutItems).values({ settlementId: s!.id, login: "alice", payerId: "P-A", cents: 300 }).returning();
     await db.insert(accruals).values([
-      { settlementId: s!.id, funderId: accountId, login: "alice", ecosystem: "npm", name: "a", cents: 500 },
-      { settlementId: s!.id, funderId: accountId, login: "alice", ecosystem: "npm", name: "a", cents: 300, status: "paid", payoutItemId: line!.id },
+      { settlementId: s!.id, funderId: accountId, login: "alice", githubId: 7, ecosystem: "npm", name: "a", cents: 500 },
+      { settlementId: s!.id, funderId: accountId, login: "alice", githubId: 7, ecosystem: "npm", name: "a", cents: 300, status: "paid", payoutItemId: line!.id },
     ]);
     await signInMaintainer(db, { id: 7, login: "Alice-Renamed" }, NOW);
     expect((await row(7))!.login).toBe("alice-renamed");
-    expect((await db.select().from(accruals)).map((a) => a.login)).toEqual(["alice-renamed", "alice-renamed"]);
-    expect((await db.select().from(payoutItems))[0]!.login).toBe("alice-renamed");
+    expect((await maintainerSummary(db, { login: "alice-renamed", githubId: 7 })).cents).toEqual({ waiting: 500, onItsWay: 0, paid: 300 });
   });
 
   it("takes over a sandbox claim made for their login before they signed in", async () => {
@@ -51,18 +51,21 @@ describe("signInMaintainer", () => {
     await db.insert(maintainers).values({ login: "bob", githubId: 5, paypalPayerId: "P-B", claimedAt: NOW });
     const { accountId } = await createDevice(db, null);
     const [s] = await db.insert(settlements).values({}).returning();
-    await db.insert(accruals).values({ settlementId: s!.id, funderId: accountId, login: "bob", ecosystem: "npm", name: "a", cents: 500 });
+    await db.insert(accruals).values([
+      { settlementId: s!.id, funderId: accountId, login: "bob", githubId: 5, ecosystem: "npm", name: "a", cents: 500 },
+      { settlementId: s!.id, funderId: accountId, login: "bob", githubId: 6, ecosystem: "npm", name: "a", cents: 70 },
+    ]);
     await db.insert(recipientCache).values({ repo: "o/a", data: { source: "committers", recipients: [{ login: "bob", shareBp: 10_000 }] }, fetchedAt: NOW });
 
     await signInMaintainer(db, { id: 6, login: "bob" }, NOW);
     expect(await row(6)).toMatchObject({ login: "bob", paypalPayerId: null });
     expect(await row(5)).toMatchObject({ login: "~5", paypalPayerId: "P-B" });
-    expect((await db.select().from(accruals))[0]!.login).toBe("~5");
+    expect((await maintainerSummary(db, { login: "bob", githubId: 6 })).cents.waiting).toBe(70);
     expect(await db.select().from(recipientCache)).toEqual([]);
 
     await signInMaintainer(db, { id: 5, login: "bobby" }, NOW);
     expect((await row(5))!.login).toBe("bobby");
-    expect((await db.select().from(accruals))[0]!.login).toBe("bobby");
+    expect((await maintainerSummary(db, { login: "bobby", githubId: 5 })).cents.waiting).toBe(500);
   });
 
   it("lets a maintainer rename into a login that only a sandbox claim used", async () => {

@@ -67,20 +67,22 @@ function fileText(body: unknown): string {
   return b?.encoding === "base64" && typeof b.content === "string" ? Buffer.from(b.content, "base64").toString("utf8") : "";
 }
 
-async function topCommitters(base: string, gh: GithubGet, now: Date): Promise<Array<{ login: string; commits: number }>> {
+async function topCommitters(base: string, gh: GithubGet, now: Date): Promise<Array<{ login: string; githubId: number | null; commits: number }>> {
   const since = new Date(now.getTime() - COMMIT_WINDOW_MS).toISOString();
   const r = usable(await gh(`${base}/commits?since=${encodeURIComponent(since)}&per_page=100`));
   if (r.status !== 200 || !Array.isArray(r.body)) return [];
   const counts = new Map<string, number>();
-  for (const c of r.body as Array<{ author?: { login?: string; type?: string } | null }>) {
+  const ids = new Map<string, number>();
+  for (const c of r.body as Array<{ author?: { login?: string; type?: string; id?: number } | null }>) {
     const login = c.author?.login?.toLowerCase();
     if (!login || c.author?.type !== "User" || login.endsWith("[bot]")) continue;
     counts.set(login, (counts.get(login) ?? 0) + 1);
+    if (typeof c.author?.id === "number") ids.set(login, c.author.id);
   }
   return [...counts]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, MAX_COMMITTERS)
-    .map(([login, commits]) => ({ login, commits }));
+    .map(([login, commits]) => ({ login, githubId: ids.get(login) ?? null, commits }));
 }
 
 /**
@@ -94,15 +96,21 @@ export async function resolveRecipients(repo: RepoRef, gh: GithubGet, now: Date)
     const funding = usable(await gh(`${base}/contents/.github/FUNDING.yml`));
     const named = funding.status === 200 ? fundingGithubLogins(fileText(funding.body)) : [];
     const people: string[] = [];
+    const ids = new Map<string, number>();
     let orgShares = 0;
     for (const login of named) {
       const account = usable(await gh(`/users/${encodeURIComponent(login)}`));
       if (account.status !== 200) continue; // renamed or deleted
-      if ((account.body as { type?: string } | null)?.type === "Organization") orgShares += 1;
-      else people.push(login);
+      const body = account.body as { type?: string; id?: number } | null;
+      if (body?.type === "Organization") orgShares += 1;
+      else {
+        people.push(login);
+        if (typeof body?.id === "number") ids.set(login, body.id);
+      }
     }
     const fromFunding = people.length + orgShares > 0;
     const committers = !fromFunding || orgShares > 0 ? await topCommitters(base, gh, now) : [];
+    for (const c of committers) if (c.githubId !== null && !ids.has(c.login)) ids.set(c.login, c.githubId);
     const commitTotal = committers.reduce((sum, c) => sum + c.commits, 0);
 
     // Everything on one integer scale: a named person weighs as much as one organisation's whole share.
@@ -116,7 +124,7 @@ export async function resolveRecipients(repo: RepoRef, gh: GithubGet, now: Date)
     }
     const logins = [...weights.keys()];
     const shares = splitCents(10_000, logins.map((l) => weights.get(l)!));
-    const recipients = logins.map((login, i) => ({ login, shareBp: shares[i]! })).filter((r) => r.shareBp > 0);
+    const recipients = logins.map((login, i) => ({ login, githubId: ids.get(login) ?? null, shareBp: shares[i]! })).filter((r) => r.shareBp > 0);
     if (recipients.length === 0) return { source: "none", recipients: [] };
     return { source: fromFunding ? "funding" : "committers", recipients };
   } catch (e) {
@@ -129,7 +137,9 @@ export async function resolveRecipients(repo: RepoRef, gh: GithubGet, now: Date)
 export async function recipientsFor(db: Db, gh: GithubGet, repo: RepoRef, now: Date): Promise<RepoRecipients | "later"> {
   const key = `${repo.owner}/${repo.name}`;
   const [hit] = await db.select().from(recipientCache).where(eq(recipientCache.repo, key)).limit(1);
-  if (hit && now.getTime() - hit.fetchedAt.getTime() < RECIPIENT_TTL_MS) return hit.data;
+  // An answer saved before GitHub ids were kept is looked up again, so new money is filed by GitHub account.
+  const withIds = hit?.data.recipients.every((r) => typeof r.githubId === "number") ?? false;
+  if (hit && withIds && now.getTime() - hit.fetchedAt.getTime() < RECIPIENT_TTL_MS) return hit.data;
   const fresh = await resolveRecipients(repo, gh, now);
   if (fresh === "later") return hit?.data ?? "later";
   await db

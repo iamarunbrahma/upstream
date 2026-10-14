@@ -138,8 +138,11 @@ export const maintainers = pgTable("maintainers", {
 
 export interface RepoRecipients {
   source: "funding" | "committers" | "none";
-  /** GitHub logins with their share in basis points; the shares add up to 10000, or the list is empty. */
-  recipients: Array<{ login: string; shareBp: number }>;
+  /**
+   * GitHub accounts with their share in basis points; the shares add up to 10000, or the list is empty.
+   * githubId is the account's numeric id, which stays with the person when the login is renamed or reused.
+   */
+  recipients: Array<{ login: string; githubId?: number | null; shareBp: number }>;
 }
 
 export const recipientCache = pgTable("recipient_cache", {
@@ -187,6 +190,8 @@ export const accruals = pgTable(
     settlementId: uuid("settlement_id").notNull().references(() => settlements.id),
     funderId: uuid("funder_id").notNull().references(() => accounts.id),
     login: text("login").notNull(),
+    /** The GitHub account that earned this money. It, not the login, decides who is paid. Null on rows from before ids were kept. */
+    githubId: integer("github_id"),
     ecosystem: text("ecosystem", { enum: ["npm", "pypi"] }).notNull(),
     name: text("name").notNull(),
     cents: integer("cents").notNull(),

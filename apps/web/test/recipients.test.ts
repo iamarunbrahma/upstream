@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPgliteDb } from "../lib/db/client";
+import { recipientCache } from "../lib/db/schema";
 import { migrateDb } from "../lib/db/migrate";
 import { createGithubGet, fundingGithubLogins, recipientsFor, resolveRecipients, type GithubGet } from "../lib/resolver/recipients";
 
@@ -9,7 +10,9 @@ const repo = { owner: "acme", name: "widget" };
 const base = "/repos/acme/widget";
 
 const fundingFile = (text: string) => ({ status: 200, body: { encoding: "base64", content: Buffer.from(text).toString("base64") } });
-const commit = (login: string, type = "User") => ({ author: { login, type } });
+/** Fake GitHub ids: a stable number per login. */
+const idOf = (login: string) => [...login].reduce((n, c) => n * 31 + c.charCodeAt(0), 7) % 1_000_000;
+const commit = (login: string, type = "User") => ({ author: { login, type, id: idOf(login) } });
 const commits = (...entries: Array<[string, number, string?]>) => ({
   status: 200,
   body: entries.flatMap(([login, n, type]) => Array.from({ length: n }, () => commit(login, type))),
@@ -46,14 +49,14 @@ describe("resolveRecipients", () => {
   it("pays the people a FUNDING.yml names, in equal shares", async () => {
     const gh = github({
       [`${base}/contents/.github/FUNDING.yml`]: fundingFile("github: [alice, bob]\n"),
-      "/users/alice": { status: 200, body: { type: "User" } },
-      "/users/bob": { status: 200, body: { type: "User" } },
+      "/users/alice": { status: 200, body: { type: "User", id: 11 } },
+      "/users/bob": { status: 200, body: { type: "User", id: 12 } },
     });
     expect(await resolveRecipients(repo, gh.get, NOW)).toEqual({
       source: "funding",
       recipients: [
-        { login: "alice", shareBp: 5000 },
-        { login: "bob", shareBp: 5000 },
+        { login: "alice", githubId: 11, shareBp: 5000 },
+        { login: "bob", githubId: 12, shareBp: 5000 },
       ],
     });
     expect(gh.calls.some((c) => c.includes("/commits"))).toBe(false);
@@ -62,16 +65,16 @@ describe("resolveRecipients", () => {
   it("gives an organisation's share to the repo's recent human committers, by commit count", async () => {
     const gh = github({
       [`${base}/contents/.github/FUNDING.yml`]: fundingFile("github: [carol, acme]\n"),
-      "/users/carol": { status: 200, body: { type: "User" } },
-      "/users/acme": { status: 200, body: { type: "Organization" } },
+      "/users/carol": { status: 200, body: { type: "User", id: 13 } },
+      "/users/acme": { status: 200, body: { type: "Organization", id: 99 } },
       [`${base}/commits*`]: commits(["alice", 3], ["bob", 1], ["dependabot[bot]", 5, "Bot"], ["renovate-bot", 4, "Bot"]),
     });
     expect(await resolveRecipients(repo, gh.get, NOW)).toEqual({
       source: "funding",
       recipients: [
-        { login: "carol", shareBp: 5000 },
-        { login: "alice", shareBp: 3750 },
-        { login: "bob", shareBp: 1250 },
+        { login: "carol", githubId: 13, shareBp: 5000 },
+        { login: "alice", githubId: idOf("alice"), shareBp: 3750 },
+        { login: "bob", githubId: idOf("bob"), shareBp: 1250 },
       ],
     });
     expect(gh.calls).toContain(`${base}/commits?since=${encodeURIComponent(new Date(NOW.getTime() - 90 * DAY).toISOString())}&per_page=100`);
@@ -92,7 +95,7 @@ describe("resolveRecipients", () => {
       [`${base}/contents/.github/FUNDING.yml`]: fundingFile("github: ghost\n"),
       [`${base}/commits*`]: commits(["alice", 1]),
     });
-    expect(await resolveRecipients(repo, gh.get, NOW)).toEqual({ source: "committers", recipients: [{ login: "alice", shareBp: 10_000 }] });
+    expect(await resolveRecipients(repo, gh.get, NOW)).toEqual({ source: "committers", recipients: [{ login: "alice", githubId: idOf("alice"), shareBp: 10_000 }] });
   });
 
   it("finds nobody for a repo with no FUNDING.yml and no human commits", async () => {
@@ -122,12 +125,20 @@ describe("createGithubGet", () => {
 });
 
 describe("recipientsFor", () => {
+  it("looks a repo up again when its remembered answer has no GitHub ids (saved before ids were kept)", async () => {
+    const db = createPgliteDb();
+    await migrateDb(db, "pglite");
+    await db.insert(recipientCache).values({ repo: "acme/widget", data: { source: "committers", recipients: [{ login: "alice", shareBp: 10_000 }] }, fetchedAt: NOW });
+    const gh = github({ [`${base}/commits*`]: commits(["alice", 1]) });
+    expect(await recipientsFor(db, gh.get, repo, NOW)).toEqual({ source: "committers", recipients: [{ login: "alice", githubId: idOf("alice"), shareBp: 10_000 }] });
+  });
+
   it("remembers a repo's recipients for 7 days, and uses the old answer while GitHub says try later", async () => {
     const db = createPgliteDb();
     await migrateDb(db, "pglite");
     const gh = github({ [`${base}/commits*`]: commits(["alice", 1]) });
     const first = await recipientsFor(db, gh.get, repo, NOW);
-    expect(first).toEqual({ source: "committers", recipients: [{ login: "alice", shareBp: 10_000 }] });
+    expect(first).toEqual({ source: "committers", recipients: [{ login: "alice", githubId: idOf("alice"), shareBp: 10_000 }] });
     const calls = gh.calls.length;
     expect(await recipientsFor(db, gh.get, repo, new Date(NOW.getTime() + 6 * DAY))).toEqual(first);
     expect(gh.calls.length).toBe(calls);

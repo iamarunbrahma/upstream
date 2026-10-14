@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { accruals, fundingEvents, maintainers, payoutItems, settlements, subscriptions } from "../db/schema";
 import type { PayPalApi } from "../paypal/api";
@@ -19,6 +19,13 @@ export const UNCLAIMED_RETURN_MS = 90 * DAY;
  */
 export const RESEND_WINDOW_MS = 25 * DAY;
 
+/**
+ * Whether accrual `a` belongs to maintainer `m`: by GitHub account when the accrual knows it, so a renamed or
+ * reused login never moves money; by login only for rows from before GitHub ids were kept.
+ */
+const owns = (m: string) =>
+  sql.raw(`((accruals.github_id is not null and ${m}.github_id = accruals.github_id) or (accruals.github_id is null and ${m}.login = accruals.login))`);
+
 export interface QueueSummary {
   returnedCents: number;
   payoutLines: number;
@@ -34,11 +41,16 @@ const total = (rows: Array<{ cents: number }>) => rows.reduce((sum, r) => sum + 
  */
 export async function queuePayouts(tx: Db, settlementId: string, now: Date): Promise<QueueSummary> {
   const refunded = await takeBackRefunded(tx);
-  const claimed = tx.select({ login: maintainers.login }).from(maintainers).where(isNotNull(maintainers.paypalPayerId));
   const unclaimed = await tx
     .update(accruals)
     .set({ status: "returned", returnReason: "unclaimed" })
-    .where(and(eq(accruals.status, "held"), lt(accruals.createdAt, new Date(now.getTime() - UNCLAIMED_RETURN_MS)), notInArray(accruals.login, claimed)))
+    .where(
+      and(
+        eq(accruals.status, "held"),
+        lt(accruals.createdAt, new Date(now.getTime() - UNCLAIMED_RETURN_MS)),
+        sql`not exists (select 1 from ${maintainers} m where m.paypal_payer_id is not null and ${owns("m")})`,
+      ),
+    )
     .returning({ cents: accruals.cents });
   // The funder's PayPal accounts are the payers on their own payments and subscriptions.
   const samePerson = await tx
@@ -49,7 +61,7 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date): Pro
         eq(accruals.status, "held"),
         sql`exists (
           select 1 from ${maintainers} m
-          where m.login = ${accruals.login} and m.paypal_payer_id is not null and (
+          where ${owns("m")} and m.paypal_payer_id is not null and (
             exists (select 1 from ${fundingEvents} f where f.account_id = ${accruals.funderId} and f.payer_id = m.paypal_payer_id)
             or exists (select 1 from ${subscriptions} s where s.account_id = ${accruals.funderId} and s.payer_id = m.paypal_payer_id)
           )
@@ -59,21 +71,25 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date): Pro
     .returning({ cents: accruals.cents });
 
   const ready = await tx
-    .select({ login: maintainers.login, payerId: maintainers.paypalPayerId, cents: sql<string>`sum(${accruals.cents})` })
+    .select({ login: maintainers.login, githubId: maintainers.githubId, payerId: maintainers.paypalPayerId, cents: sql<string>`sum(${accruals.cents})` })
     .from(accruals)
-    .innerJoin(maintainers, eq(maintainers.login, accruals.login))
+    .innerJoin(maintainers, owns("maintainers"))
     .where(and(eq(accruals.status, "held"), isNotNull(maintainers.paypalPayerId), lte(maintainers.claimedAt, new Date(now.getTime() - FIRST_PAYOUT_HOLD_MS))))
-    .groupBy(maintainers.login, maintainers.paypalPayerId)
+    .groupBy(maintainers.login, maintainers.githubId, maintainers.paypalPayerId)
     .having(sql`sum(${accruals.cents}) >= ${MIN_PAYOUT_CENTS}`)
     .orderBy(maintainers.login);
   let queuedCents = 0;
   for (const r of ready) {
     const [line] = await tx.insert(payoutItems).values({ settlementId, login: r.login, payerId: r.payerId!, cents: 0, updatedAt: now }).returning({ id: payoutItems.id });
     // The line pays exactly what this update moved onto it, whatever changed since the sum above.
+    const theirs =
+      r.githubId !== null
+        ? sql`(${accruals.githubId} = ${r.githubId} or (${accruals.githubId} is null and ${accruals.login} = ${r.login}))`
+        : sql`(${accruals.githubId} is null and ${accruals.login} = ${r.login})`;
     const moved = await tx
       .update(accruals)
       .set({ status: "queued", payoutItemId: line!.id })
-      .where(and(eq(accruals.status, "held"), eq(accruals.login, r.login)))
+      .where(and(eq(accruals.status, "held"), theirs))
       .returning({ cents: accruals.cents });
     const cents = total(moved);
     await tx.update(payoutItems).set({ cents }).where(eq(payoutItems.id, line!.id));

@@ -87,12 +87,12 @@ describe("settlementDeps", () => {
         ? { status: 200, body: { info: { summary: "Widgets", project_urls: { Source: "https://github.com/Acme/Widget" } } } }
         : { status: 404, body: null };
     const gh: GithubGet = async (path) =>
-      path.startsWith("/repos/acme/widget/commits") ? { status: 200, body: [{ author: { login: "alice", type: "User" } }] } : { status: 404, body: null };
+      path.startsWith("/repos/acme/widget/commits") ? { status: 200, body: [{ author: { login: "alice", type: "User", id: 42 } }] } : { status: 404, body: null };
     const deps = settlementDeps({ db, http, model: null, paypal: new FakePayPal() } as unknown as Deps & { paypal: FakePayPal }, gh);
     const repo = await deps.repoFor("pypi", "widget");
     expect(repo).toEqual({ owner: "acme", name: "widget" });
     if (!repo || repo === "later") throw new Error("expected a repo");
-    expect(await deps.recipients(repo)).toEqual({ source: "committers", recipients: [{ login: "alice", shareBp: 10_000 }] });
+    expect(await deps.recipients(repo)).toEqual({ source: "committers", recipients: [{ login: "alice", githubId: 42, shareBp: 10_000 }] });
     expect(await deps.repoFor("pypi", "missing")).toBeNull();
     const down = settlementDeps({ db, http: async () => ({ status: 503, body: null }), model: null, paypal: new FakePayPal() } as unknown as Deps & { paypal: FakePayPal }, gh);
     expect(await down.repoFor("pypi", "never-seen")).toBe("later");

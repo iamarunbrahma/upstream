@@ -1,0 +1,1 @@
+ALTER TABLE "accruals" ADD COLUMN "github_id" integer;

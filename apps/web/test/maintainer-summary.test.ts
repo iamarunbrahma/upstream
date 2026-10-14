@@ -34,6 +34,8 @@ async function money() {
     { ...owed, name: "right-pad", cents: 120, status: "held", createdAt: OCT },
     { ...owed, name: "right-pad", cents: 999, status: "returned", returnReason: "unclaimed", createdAt: OCT },
     { ...owed, login: "bob", name: "left-pad", cents: 50, createdAt: OCT },
+    { ...owed, login: "alice", githubId: 99, name: "left-pad", cents: 40, createdAt: OCT },
+    { ...owed, login: "alice-before-rename", githubId: 7, name: "right-pad", cents: 5, createdAt: OCT },
   ]);
   const [r] = await db
     .insert(receipts)
@@ -49,25 +51,25 @@ async function money() {
 describe("maintainerSummary", () => {
   it("shows what's waiting, on its way and paid, by month and by package, never counting money given back", async () => {
     await money();
-    expect(await maintainerSummary(db, "alice")).toEqual({
+    expect(await maintainerSummary(db, { login: "alice", githubId: 7 })).toEqual({
       login: "alice",
       paypal: { linked: false, firstPayoutFrom: null },
-      cents: { waiting: 120, onItsWay: 250, paid: 700 },
+      cents: { waiting: 125, onItsWay: 250, paid: 700 },
       months: [
-        { month: "2026-10", setAsideCents: 370 },
+        { month: "2026-10", setAsideCents: 375 },
         { month: "2026-09", setAsideCents: 700 },
       ],
       payouts: [{ date: "2026-10-14", cents: 700, status: "SUCCESS" }],
       packages: [
         { ecosystem: "npm", name: "left-pad", cents: 950, roles: { foundation: 1 } },
-        { ecosystem: "npm", name: "right-pad", cents: 120, roles: { helper: 1 } },
+        { ecosystem: "npm", name: "right-pad", cents: 125, roles: { helper: 1 } },
       ],
     });
   });
 
   it("says when the first payout can go out once PayPal is linked", async () => {
     await linkPayPal(db, 7, { payerId: "P-A", verified: true }, OCT);
-    expect((await maintainerSummary(db, "alice")).paypal).toEqual({ linked: true, firstPayoutFrom: "2026-10-21" });
+    expect((await maintainerSummary(db, { login: "alice", githubId: 7 })).paypal).toEqual({ linked: true, firstPayoutFrom: "2026-10-21" });
   });
 });
 
