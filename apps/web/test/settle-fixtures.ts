@@ -34,6 +34,7 @@ export async function settlementWorld() {
       registryDown.has(`${ecosystem}:${name}`) ? ("later" as const) : lookups[`${ecosystem}:${name}`] === null ? null : { owner: ecosystem, name },
     recipients: async (repo: { owner: string; name: string }) => lookups[`${repo.owner}:${repo.name}`] ?? { source: "none" as const, recipients: [] },
     now: () => clock,
+    minPayoutCents: undefined as number | undefined,
   };
 
   const fund = (accountId: string, cents: number, payerId: string | null = null) =>

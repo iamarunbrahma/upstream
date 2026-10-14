@@ -9,6 +9,12 @@ import { withSettleLock } from "./lock";
 const DAY = 24 * 60 * 60 * 1000;
 /** A maintainer is paid once they're owed at least this much; below it, money carries over (spec section 7). */
 export const MIN_PAYOUT_CENTS = 100;
+
+/** This server's payout floor from MIN_PAYOUT_CENTS: a whole number of cents, at least 1. Anything else keeps $1. */
+export function payoutFloorCents(value: string | undefined): number {
+  const n = Number(value);
+  return value && Number.isInteger(n) && n >= 1 ? n : MIN_PAYOUT_CENTS;
+}
 /** Self-dealing control: a new maintainer's first payout waits this long after they link PayPal. */
 export const FIRST_PAYOUT_HOLD_MS = 7 * DAY;
 /** Money nobody claimed in this long goes back into the funder's budget. */
@@ -36,9 +42,9 @@ const total = (rows: Array<{ cents: number }>) => rows.reduce((sum, r) => sum + 
 /**
  * Runs inside the settlement's locked transaction. Gives money back to funders when it sat unclaimed for
  * 90 days, or when it would go to the funder's own PayPal account. Then puts everything held for each
- * maintainer who linked PayPal at least 7 days ago, and is owed $1 or more, on one payout line.
+ * maintainer who linked PayPal at least 7 days ago, and is owed at least the payout floor ($1 unless set lower), on one payout line.
  */
-export async function queuePayouts(tx: Db, settlementId: string, now: Date): Promise<QueueSummary> {
+export async function queuePayouts(tx: Db, settlementId: string, now: Date, floorCents = MIN_PAYOUT_CENTS): Promise<QueueSummary> {
   const refunded = await takeBackRefunded(tx);
   const unclaimed = await tx
     .update(accruals)
@@ -75,7 +81,7 @@ export async function queuePayouts(tx: Db, settlementId: string, now: Date): Pro
     .innerJoin(maintainers, owns("maintainers"))
     .where(and(eq(accruals.status, "held"), isNotNull(maintainers.paypalPayerId), lte(maintainers.claimedAt, new Date(now.getTime() - FIRST_PAYOUT_HOLD_MS))))
     .groupBy(maintainers.login, maintainers.githubId, maintainers.paypalPayerId)
-    .having(sql`sum(${accruals.cents}) >= ${MIN_PAYOUT_CENTS}`)
+    .having(sql`sum(${accruals.cents}) >= ${floorCents}`)
     .orderBy(maintainers.login);
   let queuedCents = 0;
   for (const r of ready) {

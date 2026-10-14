@@ -21,6 +21,8 @@ export interface SettleDeps {
   /** Who gets the repo's share, or "later" while GitHub is rate-limiting (cached GitHub lookup). */
   recipients: (repo: RepoRef) => Promise<RepoRecipients | "later">;
   now?: () => Date;
+  /** Pay a maintainer once they're owed this much; $1 unless the server sets it lower (the sandbox demo). */
+  minPayoutCents?: number;
 }
 
 export interface SettleSummary extends QueueSummary {
@@ -136,6 +138,6 @@ export async function settle(deps: SettleDeps): Promise<SettleSummary> {
         summary.setAsideCents += cents;
       }
     }
-    return { ...summary, ...(await queuePayouts(tx, run!.id, now)) };
+    return { ...summary, ...(await queuePayouts(tx, run!.id, now, deps.minPayoutCents)) };
   });
 }

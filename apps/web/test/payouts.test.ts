@@ -3,7 +3,7 @@ import type { Db } from "../lib/db/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { accruals, maintainers, payoutItems, settlements } from "../lib/db/schema";
 import { balanceCents } from "../lib/funding/ledger";
-import { FIRST_PAYOUT_HOLD_MS, payOut, queuePayouts, resolvePayoutCheck } from "../lib/funding/payouts";
+import { FIRST_PAYOUT_HOLD_MS, MIN_PAYOUT_CENTS, payOut, payoutFloorCents, queuePayouts, resolvePayoutCheck } from "../lib/funding/payouts";
 import { settle } from "../lib/funding/settle";
 import { PayPalError } from "../lib/paypal/client";
 import { DAY, settlementWorld } from "./settle-fixtures";
@@ -217,6 +217,21 @@ describe("payOut", () => {
     await w.fund(f, 50);
     await w.receipt(f, { b: 10_000 });
     expect(await run()).toMatchObject({ payoutLines: 1, queuedCents: 110 });
+  });
+
+  it("pays any amount on a server whose payout floor is lower, like the sandbox demo", async () => {
+    const f = await w.funder(40);
+    await w.receipt(f, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 8);
+    w.deps.minPayoutCents = 1;
+    expect(await run()).toMatchObject({ payoutLines: 1, queuedCents: 40 });
+  });
+
+  it("reads the payout floor from a whole number of cents, and keeps $1 for anything else", () => {
+    expect(MIN_PAYOUT_CENTS).toBe(100);
+    expect(payoutFloorCents("1")).toBe(1);
+    expect(payoutFloorCents("250")).toBe(250);
+    for (const bad of [undefined, "", "0", "-5", "0.5", "abc"]) expect(payoutFloorCents(bad)).toBe(100);
   });
 
   it("waits 7 days after a maintainer links PayPal before their first payout", async () => {

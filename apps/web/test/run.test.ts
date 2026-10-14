@@ -97,6 +97,18 @@ describe("settlementDeps", () => {
     const down = settlementDeps({ db, http: async () => ({ status: 503, body: null }), model: null, paypal: new FakePayPal() } as unknown as Deps & { paypal: FakePayPal }, gh);
     expect(await down.repoFor("pypi", "never-seen")).toBe("later");
   });
+
+  it("takes the server's payout floor from MIN_PAYOUT_CENTS", async () => {
+    const db = createPgliteDb();
+    const make = () => settlementDeps({ db, http: async () => ({ status: 404, body: null }), model: null, paypal: new FakePayPal() } as unknown as Deps & { paypal: FakePayPal }, async () => ({ status: 404, body: null }));
+    expect(make().minPayoutCents).toBe(100);
+    process.env.MIN_PAYOUT_CENTS = "1";
+    try {
+      expect(make().minPayoutCents).toBe(1);
+    } finally {
+      delete process.env.MIN_PAYOUT_CENTS;
+    }
+  });
 });
 
 describe("POST /api/settle", () => {

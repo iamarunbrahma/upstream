@@ -4,7 +4,7 @@ import type { Deps } from "../receipts/service";
 import { lookupPackage } from "../resolver/cache";
 import { recipientsFor, type GithubGet } from "../resolver/recipients";
 import { reconcilePayouts } from "./payout-status";
-import { payOut, type PayoutDeps, type SendResult } from "./payouts";
+import { payOut, payoutFloorCents, type PayoutDeps, type SendResult } from "./payouts";
 import { settle, type SettleDeps, type SettleSummary } from "./settle";
 
 export type RunDeps = SettleDeps & PayoutDeps;
@@ -30,6 +30,7 @@ export function settlementDeps(deps: Deps & { paypal: PayPalApi }, gh: GithubGet
       return pkg === "later" ? "later" : pkg.repo;
     },
     recipients: (repo) => recipientsFor(deps.db, gh, repo, clock()),
+    minPayoutCents: payoutFloorCents(process.env.MIN_PAYOUT_CENTS),
   };
 }
 
