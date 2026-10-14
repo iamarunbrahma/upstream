@@ -1,20 +1,21 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { accounts, webhookEvents } from "../db/schema";
-import { netCents, recordFunding } from "./ledger";
+import { accounts, fundingEvents, webhookEvents } from "../db/schema";
+import { PayPalError } from "../paypal/client";
 import { reconcileSubscription, type FundingDeps } from "./subscriptions";
+import { creditCaptures } from "./topups";
 
 const SIGNATURE_HEADERS = ["paypal-auth-algo", "paypal-cert-url", "paypal-transmission-id", "paypal-transmission-sig", "paypal-transmission-time"];
 
-const MoneyShape = z.object({ currency_code: z.string(), value: z.string() });
 const CaptureShape = z.object({
   id: z.string(),
   status: z.literal("COMPLETED"),
   custom_id: z.uuid(),
-  create_time: z.string().optional(),
-  amount: MoneyShape.optional(),
-  seller_receivable_breakdown: z.object({ net_amount: MoneyShape.optional() }).optional(),
+  supplementary_data: z.object({ related_ids: z.object({ order_id: z.string() }) }),
 });
+
+/** PayPal can announce a payment before it lists it. Answering non-2xx makes PayPal send the event again later. */
+const NOT_LISTED = "payment not listed yet";
 
 export interface WebhookResult {
   status: number;
@@ -47,6 +48,7 @@ export async function handleWebhook(deps: WebhookDeps, headers: Headers, rawBody
   if (seen) return { status: 200, outcome: "duplicate" };
   const resource = event.resource && typeof event.resource === "object" ? (event.resource as Record<string, unknown>) : {};
   const outcome = await dispatch(deps, event.event_type, resource);
+  if (outcome === NOT_LISTED) return { status: 503, outcome };
   await deps.db.insert(webhookEvents).values({ id: event.id, eventType: event.event_type, outcome }).onConflictDoNothing();
   return { status: 200, outcome };
 }
@@ -55,9 +57,18 @@ async function dispatch(deps: WebhookDeps, type: string, r: Record<string, unkno
   const reconcile = async (id: unknown) =>
     typeof id === "string" && (await reconcileSubscription(deps, id)) ? "reconciled" : "unknown subscription";
   if (type.startsWith("BILLING.SUBSCRIPTION.")) return reconcile(r.id);
-  if (type === "PAYMENT.SALE.COMPLETED") return reconcile(r.billing_agreement_id);
+  if (type === "PAYMENT.SALE.COMPLETED") {
+    const outcome = await reconcile(r.billing_agreement_id);
+    if (outcome === "reconciled" && typeof r.id === "string" && !(await isRecorded(deps, r.id))) return NOT_LISTED;
+    return outcome;
+  }
   if (type === "PAYMENT.CAPTURE.COMPLETED") return creditCapture(deps, r);
   return "ignored";
+}
+
+async function isRecorded(deps: WebhookDeps, paypalId: string): Promise<boolean> {
+  const [row] = await deps.db.select({ id: fundingEvents.paypalId }).from(fundingEvents).where(eq(fundingEvents.paypalId, paypalId)).limit(1);
+  return Boolean(row);
 }
 
 async function creditCapture(deps: WebhookDeps, r: Record<string, unknown>): Promise<string> {
@@ -65,14 +76,11 @@ async function creditCapture(deps: WebhookDeps, r: Record<string, unknown>): Pro
   if (!cap.success) return "ignored";
   const [account] = await deps.db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, cap.data.custom_id)).limit(1);
   if (!account) return "unknown account";
-  const fresh = await recordFunding(deps.db, {
-    accountId: account.id,
-    source: "topup",
-    paypalId: cap.data.id,
-    amountCents: netCents(cap.data.seller_receivable_breakdown?.net_amount, cap.data.amount),
-    payerId: null,
-    occurredAt: cap.data.create_time ? new Date(cap.data.create_time) : new Date(),
-    raw: r,
+  // Read the order itself, so the payment is recorded exactly as when we capture it: with who paid, and only for its owner.
+  const order = await deps.paypal.getOrder(cap.data.supplementary_data.related_ids.order_id).catch((e: unknown) => {
+    if (e instanceof PayPalError && e.status === 404) return null;
+    throw e;
   });
-  return fresh ? "credited" : "already credited";
+  if (!order || order.purchase_units?.[0]?.custom_id !== account.id) return "unknown order";
+  return (await creditCaptures(deps.db, account.id, order, deps.now?.())) > 0 ? "credited" : "already credited";
 }
