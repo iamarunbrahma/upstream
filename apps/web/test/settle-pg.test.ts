@@ -43,5 +43,5 @@ describe.skipIf(!url)("settle on Postgres", () => {
     await Promise.all([settle(deps), settle(deps), settle(deps)]);
     const [row] = await db.select({ total: sql<string>`coalesce(sum(${accruals.cents}), 0)` }).from(accruals).where(eq(accruals.funderId, accountId));
     expect(Number(row!.total)).toBe(1000);
-  });
+  }, 240_000); // a remote database answers each of the many migration statements over the network
 });
