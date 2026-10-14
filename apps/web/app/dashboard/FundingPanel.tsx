@@ -22,6 +22,7 @@ export function FundingPanel(props: {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [topupCents, setTopupCents] = useState(1000);
+  const [tierKey, setTierKey] = useState(props.tiers[0]?.key ?? "");
   const [pending, setPending] = useState<{ message: string; retry: () => void } | null>(null);
 
   /** Records a payment PayPal has approved. If that can't finish yet, offers "Check again", which repeats it safely. */
@@ -93,20 +94,27 @@ export function FundingPanel(props: {
                   </p>
                 ) : (
                   <div className="grid gap-3">
-                    {props.tiers.map((t) => (
-                      <div key={t.key} className="grid gap-1.5">
-                        <span className="text-sm text-muted-foreground">{t.label}</span>
-                        <PayPalSubscriptionButton
-                          createSubscription={async () => ({
-                            subscriptionId: (await call<{ subscriptionId: string }>("POST", "/api/subscriptions", { tier: t.key })).subscriptionId,
-                          })}
-                          onApprove={async ({ subscriptionId }) => {
-                            void settle(() => call<{ credited: number }>("POST", `/api/subscriptions/${subscriptionId}/reconcile`), 12, "Thanks. Your first payment will show up here soon.");
-                          }}
-                          onError={() => setError("PayPal couldn't start the subscription. Please try again.")}
-                        />
-                      </div>
-                    ))}
+                    <Select value={tierKey} onValueChange={setTierKey}>
+                      <SelectTrigger className="w-full" aria-label="Monthly amount">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {props.tiers.map((t) => (
+                          <SelectItem key={t.key} value={t.key}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <PayPalSubscriptionButton
+                      createSubscription={async () => ({
+                        subscriptionId: (await call<{ subscriptionId: string }>("POST", "/api/subscriptions", { tier: tierKey })).subscriptionId,
+                      })}
+                      onApprove={async ({ subscriptionId }) => {
+                        void settle(() => call<{ credited: number }>("POST", `/api/subscriptions/${subscriptionId}/reconcile`), 12, "Thanks. Your first payment will show up here soon.");
+                      }}
+                      onError={() => setError("PayPal couldn't start the subscription. Please try again.")}
+                    />
                   </div>
                 )}
               </div>
