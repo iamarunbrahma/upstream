@@ -21,7 +21,7 @@ The clearest public case: in January 2026 Tailwind Labs laid off 75% of its engi
 
 ## 2. What the user experiences
 
-1. **Install once.** `npx upstream init` adds the Claude Code plugin (a hook plus an MCP server) and links the machine to an Upstream account.
+1. **Install once.** `npx upstream-pay init` (npm package `upstream-pay`, command `upstream`) adds the Claude Code plugin (a hook plus an MCP server) and links the machine to an Upstream account.
 2. **Fund once.** On the web dashboard, pick a monthly budget ($5 / $15 / $50) and subscribe with the PayPal button (JS SDK v6 subscription session). One-time top-ups go through PayPal Checkout.
 3. **Code as usual.** When a Claude Code session ends, the hook builds a usage receipt locally and sends it to Upstream as *proposed*.
 4. **See the receipt in the agent.** Running `/upstream:receipt` (or asking the agent) calls the MCP tool, which shows a receipt like this:
