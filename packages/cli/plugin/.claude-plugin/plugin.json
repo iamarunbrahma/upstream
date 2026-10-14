@@ -1,0 +1,8 @@
+{
+  "name": "upstream",
+  "version": "0.1.0",
+  "description": "Your AI coding agent pays back the open source it builds with.",
+  "author": { "name": "Arun Brahma", "email": "contact@arunbrahma.com" },
+  "license": "MIT",
+  "repository": "https://github.com/iamarunbrahma/upstream"
+}

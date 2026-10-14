@@ -1,0 +1,12 @@
+{
+  "description": "Upstream: send a usage receipt when a Claude Code session ends",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/upstream.mjs\" hook session-end", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}

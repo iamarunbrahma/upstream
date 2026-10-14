@@ -1,0 +1,17 @@
+{
+  "name": "upstream-pay",
+  "version": "0.1.0",
+  "description": "Your AI coding agent pays back the open source it builds with.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "upstream": "./plugin/dist/upstream.mjs" },
+  "files": ["plugin"],
+  "scripts": { "build": "tsup" },
+  "devDependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "@upstream/core": "workspace:*",
+    "commander": "15.0.0",
+    "tsup": "8.5.1",
+    "zod": "4.6.7"
+  }
+}

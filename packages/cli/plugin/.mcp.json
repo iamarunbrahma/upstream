@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "upstream": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/upstream.mjs", "mcp"]
+    }
+  }
+}
