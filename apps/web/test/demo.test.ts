@@ -20,6 +20,14 @@ const { POST: settleNow } = await import("../app/api/demo/settle/route");
 
 const start = (origin = "http://up.test", ip = "203.0.113.7") =>
   startDemo(new Request("http://up.test/demo/start", { method: "POST", headers: { origin, host: "up.test", "x-forwarded-for": ip } }));
+const startWith = (cookie: string, fresh = false) =>
+  startDemo(
+    new Request("http://up.test/demo/start", {
+      method: "POST",
+      headers: { origin: "http://up.test", host: "up.test", "x-forwarded-for": "203.0.113.7", cookie, "content-type": "application/x-www-form-urlencoded" },
+      body: fresh ? "fresh=1" : "",
+    }),
+  );
 const cookieOf = (res: Response) => res.headers.get("set-cookie")!.split(";")[0]!;
 const me = async (cookie: string) => (await getMe(new Request("http://up.test/api/me", { headers: { cookie } }))).json() as Promise<{ demo: boolean }>;
 
@@ -43,6 +51,28 @@ describe("Try the demo", () => {
 
     const second = await start();
     expect(cookieOf(second)).not.toBe(cookieOf(first));
+  });
+
+  it("keeps a visitor's demo account when they press Try the demo again, and starts over only when asked", async () => {
+    const cookie = cookieOf(await start());
+    const again = await startWith(cookie);
+    expect(again.status).toBe(303);
+    expect(again.headers.get("location")).toBe("/dashboard");
+    expect(again.headers.get("set-cookie")).toBeNull();
+    const fresh = await startWith(cookie, true);
+    expect(fresh.status).toBe(303);
+    expect(cookieOf(fresh)).not.toBe(cookie);
+  });
+
+  it("never replaces a signed-in real account with a demo one", async () => {
+    const { accountId } = await createDevice(h.deps.db, null);
+    const real = `${SESSION_COOKIE}=${await createSession(h.deps.db, accountId)}`;
+    for (const fresh of [false, true]) {
+      const res = await startWith(real, fresh);
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toBe("/dashboard");
+      expect(res.headers.get("set-cookie")).toBeNull();
+    }
   });
 
   it("is off unless the server runs the demo", async () => {

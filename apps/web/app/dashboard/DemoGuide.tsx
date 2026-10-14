@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -123,11 +123,18 @@ export function DemoGuide(props: { me: Me; receipts: ReceiptView[]; onChange: ()
             <CardTitle className="text-lg font-semibold">Try the whole flow in four steps</CardTitle>
             <CardDescription>Your own demo account. Nothing here is real money: it all runs on the PayPal sandbox.</CardDescription>
           </div>
-          <div className="flex min-w-40 items-center gap-3 text-sm text-muted-foreground">
-            <Progress value={(done / steps.length) * 100} className="h-2" aria-label={`${done} of ${steps.length} steps done`} />
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <Progress value={(done / steps.length) * 100} className="h-2 w-32" aria-label={`${done} of ${steps.length} steps done`} />
             <span className="tabular-nums">
               {done}/{steps.length}
             </span>
+            {/* A brand new, empty demo account; this one stays where it is but this browser leaves it. */}
+            <form method="post" action="/demo/start">
+              <input type="hidden" name="fresh" value="1" />
+              <Button type="submit" variant="ghost" size="sm">
+                <RotateCcw /> Start over
+              </Button>
+            </form>
           </div>
         </div>
       </CardHeader>
