@@ -3,6 +3,7 @@ import { receipts, subscriptions } from "../../../lib/db/schema";
 import { isDemoAccount } from "../../../lib/demo/accounts";
 import { balanceCents, givenCents } from "../../../lib/funding/ledger";
 import { getSettings } from "../../../lib/funding/settings";
+import { givenLines, projectSplit } from "../../../lib/funding/view";
 import { json, withAccount } from "../../../lib/http";
 
 export const runtime = "nodejs";
@@ -29,6 +30,8 @@ export async function GET(req: Request): Promise<Response> {
       receipts: { proposed: 0, approved: 0, skipped: 0, ...Object.fromEntries(counts.map((c) => [c.status, Number(c.n)])) },
       paymentsReady: Boolean(deps.paypal),
       demo: await isDemoAccount(deps.db, accountId),
+      projection: await projectSplit(deps.db, accountId),
+      given: await givenLines(deps.db, accountId),
     });
   });
 }

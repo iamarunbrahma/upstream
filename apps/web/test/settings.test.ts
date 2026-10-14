@@ -73,6 +73,8 @@ describe("dashboard API", () => {
       receipts: { proposed: 1, approved: 0, skipped: 0 },
       paymentsReady: false,
       demo: false,
+      projection: [],
+      given: [],
     });
   });
 
