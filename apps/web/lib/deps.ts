@@ -6,6 +6,7 @@ import { workflowsFromEnv } from "./jobs/workflows";
 import { createRateLimiter } from "./limits";
 import { createGithubOAuth } from "./maintainers/github-oauth";
 import { createPayPalIdentity } from "./maintainers/paypal-identity";
+import { createAgentOrders, isSandboxBase } from "./paypal/agent-toolkit";
 import { createPayPalApi } from "./paypal/api";
 import { createPayPalHttp, paypalApiBase } from "./paypal/client";
 import { planIdsFromEnv } from "./paypal/plans";
@@ -60,6 +61,14 @@ export function getDeps(): Promise<Deps> {
       paypalIdentity:
         process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET
           ? createPayPalIdentity({
+              clientId: process.env.PAYPAL_CLIENT_ID,
+              clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+              apiBase: paypalApiBase(process.env.PAYPAL_API_BASE),
+            })
+          : null,
+      agentOrders:
+        process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET && isSandboxBase(paypalApiBase(process.env.PAYPAL_API_BASE))
+          ? createAgentOrders({
               clientId: process.env.PAYPAL_CLIENT_ID,
               clientSecret: process.env.PAYPAL_CLIENT_SECRET,
               apiBase: paypalApiBase(process.env.PAYPAL_API_BASE),

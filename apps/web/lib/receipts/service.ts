@@ -1,3 +1,4 @@
+import type { AgentOrders } from "../paypal/agent-toolkit";
 import { packageKey, type ReceiptPayload, type ReceiptStatus, type ReceiptView } from "@upstream/core";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
@@ -42,6 +43,8 @@ export interface Deps {
   githubOAuth?: GithubOAuth | null;
   /** Log in with PayPal, for maintainers linking where they're paid; null without PayPal credentials. */
   paypalIdentity?: PayPalIdentity | null;
+  /** PayPal's Agent Toolkit, for payments a developer's coding agent starts; null without PayPal credentials or off the sandbox. */
+  agentOrders?: AgentOrders | null;
 }
 
 /** A session's receipt is re-judged at most this many times, so re-submitting can't burn model quota. */
