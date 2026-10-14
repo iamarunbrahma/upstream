@@ -3,14 +3,14 @@
 // Usage: pnpm --filter web claim-maintainer <github-login> <paypal-payer-id> [days-ago]
 import { getDeps } from "../lib/deps";
 import { maintainers } from "../lib/db/schema";
-import { SANDBOX_API } from "../lib/paypal/client";
+import { paypalApiBase, SANDBOX_API } from "../lib/paypal/client";
 
 const [login, payerId, daysAgo = "8"] = process.argv.slice(2);
 if (!login || !payerId || !/^\d+$/.test(daysAgo)) {
   console.error("Usage: pnpm --filter web claim-maintainer <github-login> <paypal-payer-id> [days-ago]");
   process.exit(1);
 }
-if ((process.env.PAYPAL_API_BASE ?? SANDBOX_API) !== SANDBOX_API) {
+if (paypalApiBase(process.env.PAYPAL_API_BASE) !== SANDBOX_API) {
   console.error("This only works against the PayPal sandbox. Real maintainers link PayPal themselves.");
   process.exit(1);
 }

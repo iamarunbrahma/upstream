@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createPayPalApi } from "../lib/paypal/api";
-import { createPayPalHttp, SANDBOX_API } from "../lib/paypal/client";
+import { createPayPalHttp, paypalApiBase } from "../lib/paypal/client";
 import { ensureCatalog } from "../lib/paypal/plans";
 
 const clientId = process.env.PAYPAL_CLIENT_ID;
@@ -9,7 +9,7 @@ if (!clientId || !clientSecret) {
   console.error("Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET in apps/web/.env.local first.");
   process.exit(1);
 }
-const api = createPayPalApi(createPayPalHttp({ clientId, clientSecret, baseUrl: process.env.PAYPAL_API_BASE ?? SANDBOX_API }));
+const api = createPayPalApi(createPayPalHttp({ clientId, clientSecret, baseUrl: paypalApiBase(process.env.PAYPAL_API_BASE) }));
 const { productId, envLines } = await ensureCatalog(api);
 const lines = [...envLines, `NEXT_PUBLIC_PAYPAL_CLIENT_ID=${clientId}`];
 console.log(`product ${productId}`);

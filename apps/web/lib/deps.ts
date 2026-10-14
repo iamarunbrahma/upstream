@@ -4,7 +4,7 @@ import { migrateDb } from "./db/migrate";
 import { createGeminiModel } from "./judge/gemini";
 import { createRateLimiter } from "./limits";
 import { createPayPalApi } from "./paypal/api";
-import { createPayPalHttp, SANDBOX_API } from "./paypal/client";
+import { createPayPalHttp, paypalApiBase } from "./paypal/client";
 import { planIdsFromEnv } from "./paypal/plans";
 import type { Deps } from "./receipts/service";
 import { fetchJson } from "./resolver/registry";
@@ -39,7 +39,7 @@ export function getDeps(): Promise<Deps> {
               createPayPalHttp({
                 clientId: process.env.PAYPAL_CLIENT_ID,
                 clientSecret: process.env.PAYPAL_CLIENT_SECRET,
-                baseUrl: process.env.PAYPAL_API_BASE ?? SANDBOX_API,
+                baseUrl: paypalApiBase(process.env.PAYPAL_API_BASE),
               }),
             )
           : null,

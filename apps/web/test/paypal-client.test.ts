@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPayPalApi } from "../lib/paypal/api";
-import { createPayPalHttp, PayPalError } from "../lib/paypal/client";
+import { createPayPalHttp, paypalApiBase, PayPalError, SANDBOX_API } from "../lib/paypal/client";
 import { fromCents, toCents } from "../lib/paypal/money";
 
 type Call = { url: string; init: RequestInit };
@@ -28,6 +28,15 @@ describe("money", () => {
     expect(() => toCents("-1.00")).toThrow();
     expect(() => toCents("1.234")).toThrow();
     expect(() => fromCents(1.5)).toThrow();
+  });
+});
+
+describe("paypalApiBase", () => {
+  it("uses the sandbox when PAYPAL_API_BASE is unset or left empty, as .env.example leaves it", () => {
+    expect(paypalApiBase(undefined)).toBe(SANDBOX_API);
+    expect(paypalApiBase("")).toBe(SANDBOX_API);
+    expect(paypalApiBase("  ")).toBe(SANDBOX_API);
+    expect(paypalApiBase("https://api-m.paypal.com")).toBe("https://api-m.paypal.com");
   });
 });
 

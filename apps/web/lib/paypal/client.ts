@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 
 export const SANDBOX_API = "https://api-m.sandbox.paypal.com";
 
+/** PayPal's API address from PAYPAL_API_BASE. Unset or empty (as .env.example leaves it) means the sandbox. */
+export function paypalApiBase(value: string | undefined): string {
+  return value?.trim() || SANDBOX_API;
+}
+
 export class PayPalError extends Error {
   constructor(
     public readonly status: number,
