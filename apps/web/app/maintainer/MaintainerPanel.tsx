@@ -1,8 +1,16 @@
 "use client";
 
+import { CircleCheck, Clock, HandCoins, LogOut, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatUsd } from "../../lib/format";
-import type { MaintainerSummary } from "../../lib/maintainers/summary";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatUsd } from "@/lib/format";
+import type { MaintainerSummary } from "@/lib/maintainers/summary";
 
 const PAYPAL_NOTICE: Record<string, string> = {
   linked: "PayPal is linked.",
@@ -33,92 +41,178 @@ export function MaintainerPanel() {
       .catch(() => setMe("signed-out"));
   }, []);
 
-  if (me === null) return <p>Loading...</p>;
+  if (me === null) return <Skeleton className="h-48 rounded-xl" />;
   if (me === "signed-out") {
     return (
-      <>
-        <p>
-          When a developer&apos;s AI coding agent builds with your package, they can choose to pay you for it through Upstream. Sign in with
-          GitHub to see what&apos;s waiting for you, then link PayPal to be paid.
-        </p>
-        <p>
-          <a href="/maintainer/github/start">Sign in with GitHub</a>
-        </p>
-      </>
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">See what agents have set aside for you</CardTitle>
+          <CardDescription className="leading-relaxed">
+            When a developer&apos;s AI coding agent builds with your package, they can choose to pay you for it through Upstream. Sign in with GitHub
+            to see what&apos;s waiting for you, then link PayPal to be paid.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button asChild size="lg">
+            <a href="/maintainer/github/start">Sign in with GitHub</a>
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
+  const stats = [
+    { icon: Clock, label: "Waiting for you", cents: me.cents.waiting },
+    { icon: Wallet, label: "On its way", cents: me.cents.onItsWay },
+    { icon: HandCoins, label: "Paid", cents: me.cents.paid, accent: true },
+  ];
   return (
-    <>
-      <div>
-        Signed in as <strong>{me.login}</strong>.{" "}
-        <form method="post" action="/maintainer/signout" style={{ display: "inline" }}>
-          <button type="submit">Sign out</button>
+    <div className="grid gap-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Avatar className="size-10">
+            <AvatarImage src={`https://github.com/${me.login}.png?size=80`} alt="" />
+            <AvatarFallback>{me.login.slice(0, 2).toUpperCase()}</AvatarFallback>
+          </Avatar>
+          <div>
+            <div className="font-semibold">@{me.login}</div>
+            <div className="text-sm text-muted-foreground">Signed in with GitHub</div>
+          </div>
+        </div>
+        <form method="post" action="/maintainer/signout">
+          <Button type="submit" variant="outline" size="sm">
+            <LogOut /> Sign out
+          </Button>
         </form>
       </div>
-      {notice && <p role="status">{notice}</p>}
-
-      <h2>Where we pay you</h2>
-      {me.paypal.linked ? (
-        <p>
-          PayPal is linked.
-          {me.paypal.firstPayoutFrom ? ` Your first payout can go out from ${me.paypal.firstPayoutFrom}.` : ""}{" "}
-          <a href="/maintainer/paypal/start">Link a different PayPal account</a>
-        </p>
-      ) : (
-        <p>
-          <a href="/maintainer/paypal/start">Link PayPal</a> so we can pay you. Payouts start a week after you link it.
-        </p>
+      {notice && (
+        <Alert>
+          <CircleCheck />
+          <AlertDescription role="status">{notice}</AlertDescription>
+        </Alert>
       )}
 
-      <h2>Your money</h2>
-      <ul>
-        <li>Waiting for you: {formatUsd(me.cents.waiting)}</li>
-        <li>On its way: {formatUsd(me.cents.onItsWay)}</li>
-        <li>Paid: {formatUsd(me.cents.paid)}</li>
-      </ul>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {stats.map((st) => (
+          <Card key={st.label} className="shadow-sm">
+            <CardHeader>
+              <CardDescription className="font-medium">{st.label}</CardDescription>
+              <CardAction>
+                <span className="grid size-8 place-items-center rounded-lg bg-accent text-accent-foreground">
+                  <st.icon className="size-4" />
+                </span>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <div className={`text-3xl font-semibold tracking-tight tabular-nums ${st.accent ? "text-primary" : ""}`}>{formatUsd(st.cents)}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-      {me.months.length > 0 && (
-        <>
-          <h2>By month</h2>
-          <ul>
-            {me.months.map((m) => (
-              <li key={m.month}>
-                {m.month}: {formatUsd(m.setAsideCents)}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {me.payouts.length > 0 && (
-        <>
-          <h2>Payouts</h2>
-          <ul>
-            {me.payouts.map((p, i) => (
-              <li key={i}>
-                {p.date}: {formatUsd(p.cents)}, {p.status === "SUCCESS" ? "paid" : p.status === "PENDING" ? "on its way" : p.status.toLowerCase()}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">Where we pay you</CardTitle>
+          <CardDescription>
+            {me.paypal.linked
+              ? me.paypal.firstPayoutFrom
+                ? `PayPal is linked. Your first payout can go out from ${me.paypal.firstPayoutFrom}.`
+                : "PayPal is linked. Payouts go out with each settlement."
+              : "Link a verified PayPal account so we can pay you. Payouts start a week after you link it."}
+          </CardDescription>
+          <CardAction>
+            {me.paypal.linked ? <Badge>PayPal linked</Badge> : <Badge variant="outline">Not linked yet</Badge>}
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <Button asChild variant={me.paypal.linked ? "outline" : "default"}>
+            <a href="/maintainer/paypal/start">{me.paypal.linked ? "Link a different PayPal account" : "Link PayPal"}</a>
+          </Button>
+        </CardContent>
+      </Card>
 
       {me.packages.length > 0 && (
-        <>
-          <h2>How agents use your packages</h2>
-          <ul>
-            {me.packages.map((p) => (
-              <li key={`${p.ecosystem}:${p.name}`}>
-                {p.name} ({formatUsd(p.cents)}):{" "}
-                {Object.entries(p.roles)
-                  .map(([role, n]) => `${ROLE[role] ?? role} ${times(n)}`)
-                  .join(", ") || "no details yet"}
-              </li>
-            ))}
-          </ul>
-        </>
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">How agents use your packages</CardTitle>
+            <CardDescription>Counted over every receipt that names them. No developer is identified.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Package</TableHead>
+                  <TableHead>What agents did with it</TableHead>
+                  <TableHead className="text-right">Set aside</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {me.packages.map((p) => (
+                  <TableRow key={`${p.ecosystem}:${p.name}`}>
+                    <TableCell className="font-medium">
+                      {p.name} <span className="text-xs font-normal text-muted-foreground">{p.ecosystem}</span>
+                    </TableCell>
+                    <TableCell className="whitespace-normal text-muted-foreground">
+                      {Object.entries(p.roles)
+                        .map(([role, n]) => `${ROLE[role] ?? role} ${times(n)}`)
+                        .join(", ") || "no details yet"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatUsd(p.cents)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
-    </>
+
+      {(me.months.length > 0 || me.payouts.length > 0) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {me.months.length > 0 && (
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-base font-semibold">By month</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableBody>
+                    {me.months.map((m) => (
+                      <TableRow key={m.month}>
+                        <TableCell>{m.month}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatUsd(m.setAsideCents)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+          {me.payouts.length > 0 && (
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-base font-semibold">Payouts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableBody>
+                    {me.payouts.map((p, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{p.date}</TableCell>
+                        <TableCell className="tabular-nums">{formatUsd(p.cents)}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant={p.status === "SUCCESS" ? "default" : "outline"}>
+                            {p.status === "SUCCESS" ? "Paid" : p.status === "PENDING" ? "On its way" : p.status.toLowerCase()}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
