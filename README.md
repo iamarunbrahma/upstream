@@ -22,6 +22,17 @@ Safeguards built in:
 - Refunds come back out of the budget.
 - Money is tracked by GitHub account, so a renamed or reused username can't redirect it.
 
+## The demo
+
+The hosted demo runs on the PayPal sandbox, so no real money moves. **Try the demo** gives each visitor their own empty account, and the dashboard walks through four steps:
+
+1. **Add money** with a PayPal sandbox buyer (the login is in the Devpost testing notes).
+2. **Run a sample session.** A recorded Claude Code session goes through the real pipeline: the package registries, then the Gemini judge. How it was recorded is in `docs/demo-sample-session.md`.
+3. **Approve its receipt**, after reading why each package got its share.
+4. **Settle now.** Your budget is split across the packages' maintainers, and PayPal Payouts go to the ones who have joined. Everyone else's share waits for them. In the demo, payouts go out at any amount; the real service waits until a maintainer is owed $1.
+
+The landing page's **Agent usage vs funding** chart sets each package's share of agent work, from real Claude Code sessions, against its share of the money Upstream has set aside. `pnpm --filter web usage-index` rebuilds the usage side from the sessions on your own machine, keeping only package names and counts.
+
 ## PayPal and AI used
 
 - **PayPal:** Subscriptions and billing plans, Catalog products, Orders v2, the JavaScript SDK v6, Payouts, Webhooks, and Log in with PayPal, all in the sandbox.
@@ -43,6 +54,7 @@ node packages/cli/plugin/dist/upstream.mjs dashboard
 ```
 
 Then:
+- **Try the demo flow locally:** add `DEMO_MODE=1` and `MIN_PAYOUT_CENTS=1` to `apps/web/.env.local`, restart, and press **Try the demo**.
 - **Use it from Claude Code:** start Claude Code with the plugin, `claude --plugin-dir packages/cli/plugin`.
 - **Run the tests:** `pnpm test`.
 - **Run a settlement:** `curl -X POST localhost:3000/api/settle -H "authorization: Bearer $SETTLE_TOKEN"`.
@@ -54,7 +66,7 @@ Then:
 ```
 packages/core   evidence schema shared by the CLI and the server
 packages/cli    the upstream command, the session-end hook, the MCP server and the Claude Code plugin
-apps/web        Next.js app: receipts, the AI judge, funding, settlement, payouts, maintainer sign-in
+apps/web        Next.js app (Tailwind and shadcn/ui): receipts, the AI judge, funding, settlement, payouts, maintainer sign-in, the demo
 docs            the design spec, the implementation plans and their ledgers, and records of live sandbox runs
 ```
 
