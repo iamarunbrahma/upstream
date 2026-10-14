@@ -1,0 +1,150 @@
+# Upstream on Render: the web app, the Workflows service that runs the AI judge, settlements and payout checks,
+# a monthly settlement and a daily payout check (both start Workflows tasks), and Postgres.
+# Secrets are `sync: false`: Render asks for them when the Blueprint is created, and they never live in this file.
+
+databases:
+  - name: upstream-db
+    plan: basic-256mb
+    region: oregon
+    postgresMajorVersion: "17"
+
+envVarGroups:
+  - name: upstream-shared
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # The hosted sandbox demo: "Try the demo" accounts, and payouts at any amount (the real rule is $1).
+      - key: DEMO_MODE
+        value: "1"
+      - key: MIN_PAYOUT_CENTS
+        value: "1"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash-lite
+      - key: PAYPAL_API_BASE
+        value: https://api-m.sandbox.paypal.com
+      - key: NEXT_PUBLIC_PAYPAL_ENV
+        value: sandbox
+
+services:
+  - type: web
+    name: upstream
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web build
+    startCommand: pnpm --filter web start
+    healthCheckPath: /
+    envVars:
+      - fromGroup: upstream-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: upstream-db
+          property: connectionString
+      - key: RENDER_WORKFLOW_SLUG
+        fromService:
+          type: workflow
+          name: upstream-jobs
+          property: slug
+      - key: SETTLE_TOKEN
+        generateValue: true
+      - key: PUBLIC_URL
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: NEXT_PUBLIC_PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_PLAN_STARTER
+        sync: false
+      - key: PAYPAL_PLAN_BUILDER
+        sync: false
+      - key: PAYPAL_PLAN_TEAM
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
+
+  - type: workflow
+    name: upstream-jobs
+    runtime: node
+    region: oregon
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter web workflows
+    envVars:
+      - fromGroup: upstream-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: upstream-db
+          property: connectionString
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+
+  # On the 1st of each month: settle every budget (a Workflows "settle" run).
+  - type: cron
+    name: upstream-settle-monthly
+    runtime: node
+    region: oregon
+    plan: starter
+    schedule: "0 6 1 * *"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter web settle
+    envVars:
+      - fromGroup: upstream-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: upstream-db
+          property: connectionString
+      - key: RENDER_WORKFLOW_SLUG
+        fromService:
+          type: workflow
+          name: upstream-jobs
+          property: slug
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
+
+  # Every day: check payout statuses with PayPal and send what's waiting (a Workflows "payouts" run).
+  - type: cron
+    name: upstream-payouts-daily
+    runtime: node
+    region: oregon
+    plan: starter
+    schedule: "0 7 * * *"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter web settle --payouts-only
+    envVars:
+      - fromGroup: upstream-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: upstream-db
+          property: connectionString
+      - key: RENDER_WORKFLOW_SLUG
+        fromService:
+          type: workflow
+          name: upstream-jobs
+          property: slug
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
