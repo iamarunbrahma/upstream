@@ -148,6 +148,13 @@ describe("createPayPalApi", () => {
     expect(f.calls[2]!.url).toBe("https://api.test/v1/payments/payouts/B-1?page_size=1000");
   });
 
+  it("reads one payout line by PayPal's item id", async () => {
+    const f = fakeFetch([token, { status: 200, body: { payout_item_id: "PI-1", transaction_status: "SUCCESS", payout_batch_id: "B-1" } }]);
+    const api = createPayPalApi(createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: f.impl }));
+    expect((await api.getPayoutItem("PI-1")).transaction_status).toBe("SUCCESS");
+    expect(f.calls[1]!.url).toBe("https://api.test/v1/payments/payouts-item/PI-1");
+  });
+
   it("treats missing webhook headers as a failed verification without calling PayPal", async () => {
     const f = fakeFetch([]);
     const api = createPayPalApi(createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: f.impl }));

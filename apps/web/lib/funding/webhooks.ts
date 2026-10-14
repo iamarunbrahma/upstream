@@ -3,7 +3,7 @@ import { z } from "zod";
 import { accounts, fundingEvents, webhookEvents } from "../db/schema";
 import type { PaypalPayoutItem } from "../paypal/api";
 import { PayPalError } from "../paypal/client";
-import { applyPayoutItem } from "./payout-status";
+import { refreshPayoutItem } from "./payout-status";
 import { recordRefund, REFUND_EVENTS } from "./refunds";
 import { reconcileSubscription, type FundingDeps } from "./subscriptions";
 import { creditCaptures } from "./topups";
@@ -66,7 +66,7 @@ async function dispatch(deps: WebhookDeps, type: string, r: Record<string, unkno
     return outcome;
   }
   if (type === "PAYMENT.CAPTURE.COMPLETED") return creditCapture(deps, r);
-  if (type.startsWith("PAYMENT.PAYOUTS-ITEM.")) return applyPayoutItem(deps.db, r as PaypalPayoutItem);
+  if (type.startsWith("PAYMENT.PAYOUTS-ITEM.")) return refreshPayoutItem(deps, r as PaypalPayoutItem);
   if (REFUND_EVENTS.includes(type)) return recordRefund(deps.db, type, r);
   return "ignored";
 }

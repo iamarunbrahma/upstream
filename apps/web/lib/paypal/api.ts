@@ -86,6 +86,8 @@ export interface PayPalApi {
   /** PayPal refuses a second batch with the same `senderBatchId`, which is what makes sending safe to repeat. */
   createPayoutBatch(senderBatchId: string, lines: PayoutLine[]): Promise<PaypalPayoutBatch>;
   getPayoutBatch(batchId: string): Promise<PaypalPayoutBatch>;
+  /** PayPal's current word on one payout line, by PayPal's own payout_item_id. */
+  getPayoutItem(payoutItemId: string): Promise<PaypalPayoutItem>;
 }
 
 const WEBHOOK_HEADERS = ["paypal-auth-algo", "paypal-cert-url", "paypal-transmission-id", "paypal-transmission-sig", "paypal-transmission-time"] as const;
@@ -183,6 +185,9 @@ export function createPayPalApi(http: PayPalHttp): PayPalApi {
     },
     getPayoutBatch(batchId) {
       return http.request("GET", `/v1/payments/payouts/${id(batchId)}?page_size=1000`);
+    },
+    getPayoutItem(payoutItemId) {
+      return http.request("GET", `/v1/payments/payouts-item/${id(payoutItemId)}`);
     },
   };
 }

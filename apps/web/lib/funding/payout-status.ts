@@ -3,18 +3,24 @@ import { z } from "zod";
 import type { Db } from "../db/client";
 import { accruals, payoutItems, settlements } from "../db/schema";
 import type { PaypalPayoutItem } from "../paypal/api";
+import { PayPalError } from "../paypal/client";
 import { toCents } from "../paypal/money";
 import type { PayoutDeps } from "./payouts";
 
 /** PayPal paid the line. */
 const PAID = ["SUCCESS"];
-/** The money didn't arrive, or came back: it's held again, to be paid on a later run or returned after 90 days. */
-const BOUNCED = ["FAILED", "RETURNED", "BLOCKED", "REFUNDED", "REVERSED", "DENIED"];
-const FINAL = [...PAID, ...BOUNCED];
+/** The money never arrived. It's held again, for a later run (or the funder, after 90 days unclaimed). */
+const RETRY = ["FAILED", "RETURNED"];
+/** PayPal won't deliver it. The money goes back to the funder. */
+const UNDELIVERABLE = ["BLOCKED", "DENIED"];
+/** The money arrived, then came back: the maintainer refunded it or PayPal reversed it. It goes back to the funder. */
+const CAME_BACK = ["REFUNDED", "REVERSED"];
+const FINAL = [...PAID, ...RETRY, ...UNDELIVERABLE, ...CAME_BACK];
 
 /**
- * Applies PayPal's status for one payout line, from a webhook or from reading the batch. The line must be one
- * we sent, in the batch PayPal names. Applying the same status again changes nothing.
+ * Applies PayPal's current status for one payout line, read from PayPal (never taken from a webhook's body).
+ * The line must be one we sent, in the batch PayPal names. Money PayPal has paid stays paid unless PayPal says
+ * it came back. Applying the same status again changes nothing.
  */
 export async function applyPayoutItem(db: Db, item: PaypalPayoutItem): Promise<"payout line updated" | "unknown payout line" | "ignored"> {
   const id = z.uuid().safeParse(item.payout_item?.sender_item_id);
@@ -35,15 +41,31 @@ export async function applyPayoutItem(db: Db, item: PaypalPayoutItem): Promise<"
     .update(payoutItems)
     .set({ status: item.transaction_status, paypalItemId: item.payout_item_id ?? null, feeCents: fee, updatedAt: new Date() })
     .where(eq(payoutItems.id, line.id));
-  if (PAID.includes(item.transaction_status)) {
-    await db.update(accruals).set({ status: "paid" }).where(and(eq(accruals.payoutItemId, line.id), eq(accruals.status, "queued")));
-  } else if (BOUNCED.includes(item.transaction_status)) {
-    await db
-      .update(accruals)
-      .set({ status: "held", payoutItemId: null })
-      .where(and(eq(accruals.payoutItemId, line.id), inArray(accruals.status, ["queued", "paid"])));
+  const ofLine = (statuses: Array<"queued" | "paid">) => and(eq(accruals.payoutItemId, line.id), inArray(accruals.status, statuses));
+  const status = item.transaction_status;
+  if (PAID.includes(status)) {
+    await db.update(accruals).set({ status: "paid" }).where(ofLine(["queued"]));
+  } else if (RETRY.includes(status)) {
+    await db.update(accruals).set({ status: "held", payoutItemId: null }).where(ofLine(["queued"]));
+  } else if (UNDELIVERABLE.includes(status)) {
+    await db.update(accruals).set({ status: "returned", returnReason: "bounced" }).where(ofLine(["queued"]));
+  } else if (CAME_BACK.includes(status)) {
+    await db.update(accruals).set({ status: "returned", returnReason: "bounced" }).where(ofLine(["queued", "paid"]));
   }
   return "payout line updated";
+}
+
+/** A payout webhook only says "this line changed": read the line from PayPal and apply what PayPal says now. */
+export async function refreshPayoutItem(deps: PayoutDeps, resource: PaypalPayoutItem): Promise<"payout line updated" | "unknown payout line" | "ignored"> {
+  if (typeof resource.payout_item_id !== "string" || !resource.payout_item_id) return "ignored";
+  let current: PaypalPayoutItem;
+  try {
+    current = await deps.paypal.getPayoutItem(resource.payout_item_id);
+  } catch (e) {
+    if (e instanceof PayPalError && e.status === 404) return "unknown payout line";
+    throw e;
+  }
+  return applyPayoutItem(deps.db, current);
 }
 
 /** Reads every sent batch that still has unfinished lines, for when webhooks can't reach us. Returns lines updated. */

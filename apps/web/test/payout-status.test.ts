@@ -54,32 +54,69 @@ describe("payout status", () => {
     expect(await w.owed(funder, "queued")).toEqual({ carol: 1000 });
   });
 
-  it("updates from a verified payout webhook, once, and learns a batch id PayPal never sent back", async () => {
+  it("on a payout webhook, asks PayPal for the line's current status instead of trusting the event", async () => {
     await settle(w.deps);
     w.paypal.loseNextAnswer("createPayoutBatch");
     await payOut(w.deps);
     await payOut(w.deps);
     // As if PayPal's "already exists" answer had come without its link to the batch.
     await w.db.update(settlements).set({ payoutBatchId: null });
-    const [before] = await w.db.select().from(settlements);
-    expect(before).toMatchObject({ payoutBatchId: null, batchStatus: "UNKNOWN" });
-
-    const item = w.paypal.setPayoutItemStatus((await line()).id, "SUCCESS");
-    expect(await webhook("E1", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", item)).toEqual({ status: 200, outcome: "payout line updated" });
-    expect(await webhook("E1", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", item)).toEqual({ status: 200, outcome: "duplicate" });
+    const now = w.paypal.setPayoutItemStatus((await line()).id, "SUCCESS");
+    const stale = { ...now, transaction_status: "BLOCKED" };
+    expect(await webhook("E1", "PAYMENT.PAYOUTS-ITEM.BLOCKED", stale)).toEqual({ status: 200, outcome: "payout line updated" });
+    expect(await webhook("E1", "PAYMENT.PAYOUTS-ITEM.BLOCKED", stale)).toEqual({ status: 200, outcome: "duplicate" });
     expect(await w.owed(funder, "paid")).toEqual({ carol: 1000 });
-    const [after] = await w.db.select().from(settlements).where(eq(settlements.id, before!.id));
-    expect(after!.payoutBatchId).toBe(item.payout_batch_id);
+    const [s] = await w.db.select().from(settlements);
+    expect(s!.payoutBatchId).toBe(now.payout_batch_id);
   });
 
-  it("ignores payout events for lines it didn't send, or that name another batch", async () => {
+  it("ignores payout events for lines PayPal doesn't know, or that belong to another batch", async () => {
     await settle(w.deps);
     await payOut(w.deps);
     const real = w.paypal.setPayoutItemStatus((await line()).id, "SUCCESS");
-    const stranger = { ...real, payout_item: { ...real.payout_item, sender_item_id: "8a1c2b3d-0000-4000-8000-000000000000" } };
-    expect((await webhook("E1", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", stranger)).outcome).toBe("unknown payout line");
-    expect((await webhook("E2", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", { ...real, payout_batch_id: "BATCH-OTHER" })).outcome).toBe("unknown payout line");
-    expect((await webhook("E3", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", { payout_item: { sender_item_id: "not-a-line" } })).outcome).toBe("ignored");
+    expect((await webhook("E1", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", { ...real, payout_item_id: "NOTANITEM" })).outcome).toBe("unknown payout line");
+    expect((await webhook("E2", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", { transaction_status: "SUCCESS" })).outcome).toBe("ignored");
+    await w.db.update(settlements).set({ payoutBatchId: "BATCH-OTHER" });
+    expect((await webhook("E3", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", real)).outcome).toBe("unknown payout line");
     expect(await w.owed(funder, "paid")).toEqual({});
+  });
+
+  it("never takes back money PayPal has paid, whatever it says later", async () => {
+    await settle(w.deps);
+    await payOut(w.deps);
+    const paid = w.paypal.setPayoutItemStatus((await line()).id, "SUCCESS");
+    await reconcilePayouts(w.deps);
+    w.paypal.setPayoutItemStatus((await line()).id, "FAILED");
+    await webhook("E1", "PAYMENT.PAYOUTS-ITEM.FAILED", { ...paid, transaction_status: "FAILED" });
+    expect(await w.owed(funder, "paid")).toEqual({ carol: 1000 });
+    await settle(w.deps);
+    await payOut(w.deps);
+    expect(w.paypal.payoutBatches.size).toBe(1);
+  });
+
+  it("gives the money back to the funder when PayPal blocks a payment, or the maintainer sends it back", async () => {
+    await settle(w.deps);
+    await payOut(w.deps);
+    w.paypal.setPayoutItemStatus((await line()).id, "BLOCKED");
+    await reconcilePayouts(w.deps);
+    expect(await w.owed(funder, "returned")).toEqual({ carol: 1000 });
+    expect(await balanceCents(w.db, funder)).toBe(1000);
+    const [a] = await w.db.select().from(accruals);
+    expect(a!.returnReason).toBe("bounced");
+    await settle(w.deps);
+    await payOut(w.deps);
+    expect(w.paypal.payoutBatches.size).toBe(1);
+
+    const other = await w.funder(500);
+    await w.receipt(other, { b: 10_000 });
+    await settle(w.deps);
+    await payOut(w.deps);
+    const sent = (await w.db.select().from(payoutItems)).find((l) => l.status === "PENDING")!;
+    const paid = w.paypal.setPayoutItemStatus(sent.id, "SUCCESS");
+    await webhook("E9", "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", paid);
+    expect(await w.owed(other, "paid")).toEqual({ carol: 500 });
+    w.paypal.setPayoutItemStatus(sent.id, "REFUNDED");
+    await webhook("E10", "PAYMENT.PAYOUTS-ITEM.REFUNDED", paid);
+    expect(await w.owed(other, "returned")).toEqual({ carol: 500 });
   });
 });

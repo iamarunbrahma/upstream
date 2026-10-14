@@ -196,6 +196,15 @@ export class FakePayPal implements PayPalApi {
     return { batch_header: { payout_batch_id: b.id, batch_status: b.status }, items: b.items.map((i) => structuredClone(i)) };
   }
 
+  async getPayoutItem(payoutItemId: string) {
+    this.enter("getPayoutItem");
+    for (const b of this.payoutBatches.values()) {
+      const item = b.items.find((i) => i.payout_item_id === payoutItemId);
+      if (item) return structuredClone(item);
+    }
+    throw new PayPalError(404, "INVALID_RESOURCE_ID", "item not found", null);
+  }
+
   /** PayPal finishes (or fails) one payout line. */
   setPayoutItemStatus(senderItemId: string, status: string): PaypalPayoutItem {
     for (const b of this.payoutBatches.values()) {
