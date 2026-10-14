@@ -129,7 +129,8 @@ export const accountSettings = pgTable("account_settings", {
 /** A GitHub account that can receive money. Plan 2c's sign-in sets `paypalPayerId` and `claimedAt`. */
 export const maintainers = pgTable("maintainers", {
   login: text("login").primaryKey(),
-  githubId: integer("github_id"),
+  /** GitHub's numeric account id: who the maintainer really is, even after they rename their login. */
+  githubId: integer("github_id").unique(),
   paypalPayerId: text("paypal_payer_id").unique(),
   claimedAt: timestamp("claimed_at", tz),
   createdAt: createdAt(),
@@ -196,3 +197,22 @@ export const accruals = pgTable(
   },
   (t) => [index("accruals_funder").on(t.funderId), index("accruals_login_status").on(t.login, t.status)],
 );
+
+/** A maintainer signed in with GitHub. Separate from a funder's web session: one person can be both. */
+export const maintainerSessions = pgTable("maintainer_sessions", {
+  idHash: text("id_hash").primaryKey(),
+  githubId: integer("github_id").notNull(),
+  createdAt: createdAt(),
+  expiresAt: timestamp("expires_at", tz).notNull(),
+});
+
+/** The `state` of a GitHub or PayPal sign-in that is under way: single use, short-lived, bound to a cookie. */
+export const oauthStates = pgTable("oauth_states", {
+  stateHash: text("state_hash").primaryKey(),
+  provider: text("provider", { enum: ["github", "paypal"] }).notNull(),
+  /** PayPal linking only: the maintainer who asked. */
+  githubId: integer("github_id"),
+  createdAt: createdAt(),
+  expiresAt: timestamp("expires_at", tz).notNull(),
+  usedAt: timestamp("used_at", tz),
+});

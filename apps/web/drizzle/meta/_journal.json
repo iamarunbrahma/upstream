@@ -29,6 +29,13 @@
       "when": 1791968253348,
       "tag": "0003_perpetual_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791978788031,
+      "tag": "0004_cloudy_imperial_guard",
+      "breakpoints": true
     }
   ]
 }
