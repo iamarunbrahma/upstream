@@ -1,0 +1,47 @@
+[
+  { "id": "fastapi-todo", "title": "Build a todo API with FastAPI", "expectedOrder": ["fastapi", "pydantic", "httpx", "pytest"], "rows": [
+    { "ecosystem": "pypi", "name": "fastapi", "installed": true, "importFiles": 3, "usageLines": 14, "docsReads": 2, "description": "FastAPI framework, high performance, easy to learn" },
+    { "ecosystem": "pypi", "name": "pydantic", "installed": true, "importFiles": 2, "usageLines": 6, "description": "Data validation using Python type hints" },
+    { "ecosystem": "pypi", "name": "httpx", "importFiles": 1, "usageLines": 2, "description": "The next generation HTTP client." },
+    { "ecosystem": "pypi", "name": "pytest", "installed": true, "kind": "devDependency", "importFiles": 1, "usageLines": 4, "description": "pytest: simple powerful testing with Python" } ] },
+  { "id": "next-dashboard", "title": "Build a Next.js analytics dashboard", "expectedOrder": ["next", "react", "recharts", "date-fns"], "rows": [
+    { "ecosystem": "npm", "name": "next", "installed": true, "importFiles": 5, "usageLines": 9, "docsReads": 3, "description": "The React Framework" },
+    { "ecosystem": "npm", "name": "react", "importFiles": 6, "usageLines": 22, "description": "React is a JavaScript library for building user interfaces." },
+    { "ecosystem": "npm", "name": "recharts", "installed": true, "importFiles": 1, "usageLines": 8, "description": "React charts" },
+    { "ecosystem": "npm", "name": "date-fns", "installed": true, "importFiles": 1, "usageLines": 2, "description": "Modern JavaScript date utility library" } ] },
+  { "id": "csv-cli", "title": "Write a CLI that converts CSV files to JSON", "expectedOrder": ["commander", "chalk", "zod", "vitest"], "rows": [
+    { "ecosystem": "npm", "name": "commander", "installed": true, "importFiles": 1, "usageLines": 12, "description": "the complete solution for node.js command-line programs" },
+    { "ecosystem": "npm", "name": "chalk", "installed": true, "importFiles": 2, "usageLines": 6, "description": "Terminal string styling done right" },
+    { "ecosystem": "npm", "name": "zod", "importFiles": 1, "usageLines": 3, "description": "TypeScript-first schema validation with static type inference" },
+    { "ecosystem": "npm", "name": "vitest", "installed": true, "kind": "devDependency", "importFiles": 2, "usageLines": 5, "description": "Next generation testing framework powered by Vite" } ] },
+  { "id": "image-classifier", "title": "Train a small image classifier", "expectedOrder": ["torch", "numpy", "tqdm", "pytest"], "rows": [
+    { "ecosystem": "pypi", "name": "torch", "importFiles": 3, "usageLines": 30, "docsReads": 1, "description": "Tensors and Dynamic neural networks in Python with strong GPU acceleration" },
+    { "ecosystem": "pypi", "name": "numpy", "importFiles": 2, "usageLines": 10, "description": "Fundamental package for array computing in Python" },
+    { "ecosystem": "pypi", "name": "tqdm", "installed": true, "importFiles": 1, "usageLines": 2, "description": "Fast, Extensible Progress Meter" },
+    { "ecosystem": "pypi", "name": "pytest", "kind": "devDependency", "importFiles": 1, "usageLines": 3, "description": "pytest: simple powerful testing with Python" } ] },
+  { "id": "price-scraper", "title": "Scrape product prices from three shop sites", "expectedOrder": ["playwright", "cheerio", "p-limit"], "rows": [
+    { "ecosystem": "npm", "name": "playwright", "installed": true, "importFiles": 2, "usageLines": 15, "docsReads": 2, "description": "A high-level API to automate web browsers" },
+    { "ecosystem": "npm", "name": "cheerio", "installed": true, "importFiles": 1, "usageLines": 8, "description": "The fast, flexible & elegant library for parsing and manipulating HTML and XML." },
+    { "ecosystem": "npm", "name": "p-limit", "installed": true, "importFiles": 1, "usageLines": 2, "description": "Run multiple promise-returning & async functions with limited concurrency" } ] },
+  { "id": "django-blog", "title": "Add a blog with an API to the Django site", "expectedOrder": ["django", "djangorestframework", "pillow"], "rows": [
+    { "ecosystem": "pypi", "name": "django", "installed": true, "importFiles": 6, "usageLines": 25, "docsReads": 3, "description": "A high-level Python web framework that encourages rapid development and clean, pragmatic design." },
+    { "ecosystem": "pypi", "name": "djangorestframework", "installed": true, "importFiles": 2, "usageLines": 8, "description": "Web APIs for Django, made easy." },
+    { "ecosystem": "pypi", "name": "pillow", "installed": true, "importFiles": 1, "usageLines": 1, "description": "Python Imaging Library (fork)" } ] },
+  { "id": "link-shortener", "title": "Build a link shortener API", "expectedOrder": ["hono", "drizzle-orm", "nanoid", "@types/node"], "rows": [
+    { "ecosystem": "npm", "name": "hono", "installed": true, "importFiles": 4, "usageLines": 20, "docsReads": 2, "description": "Web framework built on Web Standards" },
+    { "ecosystem": "npm", "name": "drizzle-orm", "installed": true, "importFiles": 2, "usageLines": 9, "description": "Drizzle ORM package for SQL databases" },
+    { "ecosystem": "npm", "name": "nanoid", "installed": true, "importFiles": 1, "usageLines": 1, "description": "A tiny, secure URL-friendly unique string ID generator" },
+    { "ecosystem": "npm", "name": "@types/node", "installed": true, "kind": "devDependency", "description": "TypeScript definitions for node" } ] },
+  { "id": "sales-dashboard", "title": "Make a sales dashboard from a CSV", "expectedOrder": ["streamlit", "pandas", "plotly"], "rows": [
+    { "ecosystem": "pypi", "name": "streamlit", "installed": true, "importFiles": 1, "usageLines": 25, "description": "A faster way to build and share data apps" },
+    { "ecosystem": "pypi", "name": "pandas", "importFiles": 1, "usageLines": 12, "description": "Powerful data structures for data analysis, time series, and statistics" },
+    { "ecosystem": "pypi", "name": "plotly", "installed": true, "importFiles": 1, "usageLines": 4, "description": "An open-source interactive data visualization library for Python" } ] },
+  { "id": "lint-setup", "title": "Set up linting and formatting", "expectedOrder": ["eslint", "typescript-eslint", "prettier"], "rows": [
+    { "ecosystem": "npm", "name": "eslint", "installed": true, "kind": "devDependency", "importFiles": 1, "usageLines": 3, "docsReads": 2, "description": "An AST-based pattern checker for JavaScript." },
+    { "ecosystem": "npm", "name": "typescript-eslint", "installed": true, "kind": "devDependency", "importFiles": 1, "usageLines": 2, "description": "Tooling which enables you to use TypeScript with ESLint" },
+    { "ecosystem": "npm", "name": "prettier", "installed": true, "kind": "devDependency", "description": "Prettier is an opinionated code formatter" } ] },
+  { "id": "discord-bot", "title": "Build a Discord bot that posts daily reminders", "expectedOrder": ["discord.js", "node-cron", "dotenv"], "rows": [
+    { "ecosystem": "npm", "name": "discord.js", "installed": true, "importFiles": 2, "usageLines": 18, "docsReads": 4, "description": "A powerful library for interacting with the Discord API" },
+    { "ecosystem": "npm", "name": "node-cron", "installed": true, "importFiles": 1, "usageLines": 3, "description": "A simple cron-like task scheduler for Node.js" },
+    { "ecosystem": "npm", "name": "dotenv", "installed": true, "importFiles": 1, "usageLines": 1, "description": "Loads environment variables from .env file" } ] }
+]
