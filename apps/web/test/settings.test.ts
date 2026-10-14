@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDevice } from "../lib/auth";
 import { createPgliteDb } from "../lib/db/client";
 import { migrateDb } from "../lib/db/migrate";
+import { subscriptions } from "../lib/db/schema";
 import { recordFunding } from "../lib/funding/ledger";
 import { getSettings, setAutoApprove } from "../lib/funding/settings";
 import { submitReceipt, type Deps } from "../lib/receipts/service";
@@ -57,6 +58,16 @@ describe("dashboard API", () => {
       receipts: { proposed: 1, approved: 0, skipped: 0 },
       paymentsReady: false,
     });
+  });
+
+  it("shows the active subscription even when an abandoned one changed more recently", async () => {
+    const { accountId, token } = await createDevice(h.deps.db, null);
+    await h.deps.db.insert(subscriptions).values([
+      { id: "I-ACTIVE", accountId, tier: "starter", status: "ACTIVE", updatedAt: new Date("2026-10-14T10:00:00Z") },
+      { id: "I-ABANDONED", accountId, tier: "builder", status: "APPROVAL_PENDING", updatedAt: new Date("2026-10-14T11:00:00Z") },
+    ]);
+    const res = await getMe(new Request("http://up.test/api/me", { headers: { authorization: `Bearer ${token}` } }));
+    expect(((await res.json()) as { subscription: unknown }).subscription).toEqual({ id: "I-ACTIVE", tier: "starter", status: "ACTIVE" });
   });
 
   it("changes the setting from the dashboard, but not from another site", async () => {

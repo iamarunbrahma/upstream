@@ -12,7 +12,8 @@ export async function GET(req: Request): Promise<Response> {
       .select({ id: subscriptions.id, tier: subscriptions.tier, status: subscriptions.status })
       .from(subscriptions)
       .where(eq(subscriptions.accountId, accountId))
-      .orderBy(desc(subscriptions.updatedAt))
+      // A live subscription wins over an abandoned attempt that changed later, so we never invite a second one.
+      .orderBy(sql`case ${subscriptions.status} when 'ACTIVE' then 0 when 'APPROVED' then 1 when 'SUSPENDED' then 2 else 3 end`, desc(subscriptions.updatedAt))
       .limit(1);
     const counts = await deps.db
       .select({ status: receipts.status, n: sql<string>`count(*)` })
