@@ -1,0 +1,30 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:generate": "drizzle-kit generate",
+    "models": "node --env-file=.env.local --import tsx scripts/gemini-models.ts",
+    "eval:live": "node --env-file=.env.local --import tsx scripts/eval-live.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.9",
+    "@google/genai": "2.29.1",
+    "@upstream/core": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "next": "16.4.0",
+    "pg": "8.23.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "drizzle-kit": "0.31.11"
+  }
+}

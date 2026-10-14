@@ -1,0 +1,18 @@
+{
+  "name": "upstream",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/core && tsc -p packages/cli && tsc -p apps/web"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@upstream/core": "workspace:*",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.4"
+  }
+}

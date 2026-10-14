@@ -1,0 +1,10 @@
+node_modules/
+.next/
+dist/
+packages/cli/plugin/dist/
+coverage/
+.data/
+.env*
+!.env.example
+*.log
+.DS_Store

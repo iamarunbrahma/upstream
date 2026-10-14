@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "plugins": [{ "name": "next" }]
+  },
+  "include": ["next-env.d.ts", "app", "lib", "scripts", "test", "drizzle.config.ts", "next.config.ts"],
+  "exclude": ["node_modules", ".next"]
+}
