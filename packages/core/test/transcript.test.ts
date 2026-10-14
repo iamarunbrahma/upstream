@@ -28,6 +28,16 @@ describe("parseTranscript", () => {
     expect(t.events[3]).toEqual({ tool: "WebFetch", url: "https://fastapi.tiangolo.com/tutorial/body/" });
   });
 
+  it("drops tool calls whose result was an error, such as an install the user didn't approve", () => {
+    const lines = [
+      { type: "assistant", sessionId: "s", message: { content: [{ type: "tool_use", id: "a", name: "Bash", input: { command: ".venv/bin/pip install fastapi" } }] } },
+      { type: "user", sessionId: "s", message: { content: [{ type: "tool_result", tool_use_id: "a", is_error: true, content: "This command requires approval" }] } },
+      { type: "assistant", sessionId: "s", message: { content: [{ type: "tool_use", id: "b", name: "Bash", input: { command: "pip install httpx" } }] } },
+      { type: "user", sessionId: "s", message: { content: [{ type: "tool_result", tool_use_id: "b", content: "ok" }] } },
+    ].map((l) => JSON.stringify(l)).join("\n");
+    expect(parseTranscript(lines).events).toEqual([{ tool: "Bash", command: "pip install httpx" }]);
+  });
+
   it("returns empty results for an empty transcript", () => {
     expect(parseTranscript("")).toEqual({ sessionId: null, title: null, events: [] });
   });
