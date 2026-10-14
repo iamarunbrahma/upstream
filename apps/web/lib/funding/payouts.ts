@@ -12,6 +12,11 @@ export const MIN_PAYOUT_CENTS = 100;
 export const FIRST_PAYOUT_HOLD_MS = 7 * DAY;
 /** Money nobody claimed in this long goes back into the funder's budget. */
 export const UNCLAIMED_RETURN_MS = 90 * DAY;
+/**
+ * PayPal refuses a repeated sender_batch_id for 30 days only. A batch whose send failed in a way that may still
+ * have reached PayPal is retried for 25 days, then left for a person to check, so it can never go out twice.
+ */
+export const RESEND_WINDOW_MS = 25 * DAY;
 
 export interface QueueSummary {
   returnedCents: number;
@@ -98,17 +103,24 @@ async function takeBackRefunded(tx: Db): Promise<number> {
 export interface PayoutDeps {
   db: Db;
   paypal: PayPalApi;
+  now?: () => Date;
 }
 
 export interface SendResult {
   settlementId: string;
-  /** sent: PayPal took the batch. sent-before: PayPal already has it, from an earlier try whose answer was lost. */
-  outcome: "sent" | "sent-before" | "failed";
+  /**
+   * sent: PayPal took the batch. sent-before: PayPal already has it, from an earlier try whose answer was lost.
+   * needs-check: an earlier try may have reached PayPal too long ago to resend safely; a person must check.
+   */
+  outcome: "sent" | "sent-before" | "failed" | "needs-check";
   batchId?: string;
   error?: string;
 }
 
-const isDuplicateBatch = (e: unknown) => e instanceof PayPalError && e.status === 400 && /sender_batch_id already exists/i.test(`${e.code} ${e.message}`);
+const isDuplicateBatch = (e: unknown): e is PayPalError =>
+  e instanceof PayPalError && e.status === 400 && /sender_batch_id already exists/i.test(`${e.code} ${e.message}`);
+/** The batch a duplicate answer points to: PayPal links /v1/payments/payouts/{batch id}. */
+const linkedBatchId = (e: PayPalError) => e.links.map((h) => h.match(/\/v1\/payments\/payouts\/([^/?#]+)$/)?.[1]).find(Boolean) ?? null;
 
 async function lineNote(db: Db, lineId: string): Promise<string> {
   const rows = await db.selectDistinct({ name: accruals.name }).from(accruals).where(eq(accruals.payoutItemId, lineId)).orderBy(accruals.name);
@@ -123,13 +135,20 @@ async function lineNote(db: Db, lineId: string): Promise<string> {
  * for the next run.
  */
 export async function payOut(deps: PayoutDeps): Promise<SendResult[]> {
+  const now = deps.now?.() ?? new Date();
   const waiting = await deps.db
-    .selectDistinct({ id: settlements.id })
+    .selectDistinct({ id: settlements.id, sendStartedAt: settlements.sendStartedAt })
     .from(settlements)
     .innerJoin(payoutItems, eq(payoutItems.settlementId, settlements.id))
     .where(and(isNull(settlements.payoutBatchId), isNull(settlements.batchStatus)));
   const results: SendResult[] = [];
-  for (const { id } of waiting) {
+  for (const { id, sendStartedAt } of waiting) {
+    if (sendStartedAt && now.getTime() - sendStartedAt.getTime() >= RESEND_WINDOW_MS) {
+      await deps.db.update(settlements).set({ batchStatus: "NEEDS_CHECK" }).where(eq(settlements.id, id));
+      results.push({ settlementId: id, outcome: "needs-check" });
+      continue;
+    }
+    if (!sendStartedAt) await deps.db.update(settlements).set({ sendStartedAt: now }).where(eq(settlements.id, id));
     const lines = await deps.db.select().from(payoutItems).where(eq(payoutItems.settlementId, id)).orderBy(payoutItems.login);
     try {
       const notes = await Promise.all(lines.map((l) => lineNote(deps.db, l.id)));
@@ -144,9 +163,11 @@ export async function payOut(deps: PayoutDeps): Promise<SendResult[]> {
       results.push({ settlementId: id, outcome: "sent", batchId: batch.batch_header.payout_batch_id });
     } catch (e) {
       if (isDuplicateBatch(e)) {
-        // PayPal has this batch but we never heard its id. Its payout webhooks carry the id and fill it in.
-        await deps.db.update(settlements).set({ batchStatus: "UNKNOWN" }).where(eq(settlements.id, id));
-        results.push({ settlementId: id, outcome: "sent-before" });
+        // PayPal already has this batch, from a try whose answer was lost. Its answer links the batch; if it
+        // ever doesn't, the batch's payout webhooks carry the id and fill it in.
+        const batchId = linkedBatchId(e);
+        await deps.db.update(settlements).set({ payoutBatchId: batchId, batchStatus: "UNKNOWN" }).where(eq(settlements.id, id));
+        results.push({ settlementId: id, outcome: "sent-before", ...(batchId ? { batchId } : {}) });
       } else if (e instanceof PayPalError) {
         results.push({ settlementId: id, outcome: "failed", error: `${e.status} ${e.code}` });
       } else {

@@ -170,9 +170,12 @@ export class FakePayPal implements PayPalApi {
 
   async createPayoutBatch(senderBatchId: string, lines: PayoutLine[]) {
     this.enter("createPayoutBatch");
-    // Like the real API: the same sender_batch_id twice is refused, whatever the request id.
-    if ([...this.payoutBatches.values()].some((b) => b.senderBatchId === senderBatchId)) {
-      throw new PayPalError(400, "Batch with given sender_batch_id already exists", "User business error.", null);
+    // Like the real API: the same sender_batch_id twice is refused, whatever the request id, with a link to the first.
+    const earlier = [...this.payoutBatches.values()].find((b) => b.senderBatchId === senderBatchId);
+    if (earlier) {
+      throw new PayPalError(400, "Batch with given sender_batch_id already exists", "User business error.", null, [
+        `https://api.sandbox.paypal.com/v1/payments/payouts/${earlier.id}`,
+      ]);
     }
     const id = this.next("BATCH-");
     const items = lines.map((l) => ({

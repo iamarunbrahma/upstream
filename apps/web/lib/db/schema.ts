@@ -151,6 +151,8 @@ export const recipientCache = pgTable("recipient_cache", {
 export const settlements = pgTable("settlements", {
   id: uuid("id").primaryKey().defaultRandom(),
   createdAt: createdAt(),
+  /** When we first asked PayPal to send this batch. PayPal refuses a repeated sender_batch_id for only 30 days. */
+  sendStartedAt: timestamp("send_started_at", tz),
   payoutBatchId: text("payout_batch_id"),
   batchStatus: text("batch_status"),
 });

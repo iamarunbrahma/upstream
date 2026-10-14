@@ -45,9 +45,26 @@ describe("payOut", () => {
     await settle(w.deps);
     w.paypal.loseNextAnswer("createPayoutBatch");
     expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "failed" });
-    expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "sent-before" });
+    expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "sent-before", batchId: batches()[0]!.id });
     expect(await payOut(w.deps)).toEqual([]);
     expect(batches()).toHaveLength(1);
+    const [s] = await w.db.select().from(settlements);
+    expect(s!.payoutBatchId).toBe(batches()[0]!.id);
+  });
+
+  it("won't resend a batch it may have sent more than 25 days ago, and asks for a check instead", async () => {
+    const f = await w.funder(1000);
+    await w.receipt(f, { b: 10_000 });
+    await w.claim("carol", "PAYER-CAROL", 8);
+    await settle(w.deps);
+    w.paypal.failNext("createPayoutBatch", new PayPalError(504, "TIMEOUT", "PayPal took too long to answer", null));
+    expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "failed" });
+    w.at(26);
+    expect((await payOut(w.deps))[0]).toMatchObject({ outcome: "needs-check" });
+    expect(w.paypal.calls.filter((c) => c === "createPayoutBatch")).toHaveLength(1);
+    expect(await payOut(w.deps)).toEqual([]);
+    const [s] = await w.db.select().from(settlements);
+    expect(s!.batchStatus).toBe("NEEDS_CHECK");
   });
 
   it("tries again on the next run when PayPal fails before taking the batch", async () => {

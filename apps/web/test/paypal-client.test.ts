@@ -62,6 +62,19 @@ describe("createPayPalHttp", () => {
     expect(err).toMatchObject({ status: 422, code: "ORDER_ALREADY_CAPTURED", debugId: "dbg1" });
   });
 
+  it("keeps the links PayPal attaches to an error, such as the batch a duplicate refers to", async () => {
+    const dup = {
+      name: "USER_BUSINESS_ERROR",
+      message: "User business error.",
+      details: [{ field: "SENDER_BATCH_ID", issue: "Batch with given sender_batch_id already exists", link: [{ href: "https://api.sandbox.paypal.com/v1/payments/payouts/GW4ZXX2PSU2WJ", rel: "self" }] }],
+      links: [],
+    };
+    const f = fakeFetch([token, { status: 400, body: dup }]);
+    const http = createPayPalHttp({ clientId: "id", clientSecret: "s", baseUrl: "https://api.test", fetchImpl: f.impl });
+    const err = await http.request("POST", "/v1/payments/payouts", {}).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 400, links: ["https://api.sandbox.paypal.com/v1/payments/payouts/GW4ZXX2PSU2WJ"] });
+  });
+
   it("fails clearly when PayPal login is refused", async () => {
     const f = fakeFetch([{ status: 401, body: { error: "invalid_client", error_description: "Client Authentication failed" } }]);
     const http = createPayPalHttp({ clientId: "id", clientSecret: "bad", baseUrl: "https://api.test", fetchImpl: f.impl });

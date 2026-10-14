@@ -59,6 +59,8 @@ describe("payout status", () => {
     w.paypal.loseNextAnswer("createPayoutBatch");
     await payOut(w.deps);
     await payOut(w.deps);
+    // As if PayPal's "already exists" answer had come without its link to the batch.
+    await w.db.update(settlements).set({ payoutBatchId: null });
     const [before] = await w.db.select().from(settlements);
     expect(before).toMatchObject({ payoutBatchId: null, batchStatus: "UNKNOWN" });
 

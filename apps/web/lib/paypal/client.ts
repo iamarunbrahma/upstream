@@ -9,6 +9,8 @@ export class PayPalError extends Error {
     public readonly code: string,
     message: string,
     public readonly debugId: string | null,
+    /** Links PayPal attaches to the error, e.g. the existing batch a duplicate sender_batch_id refers to. */
+    public readonly links: string[] = [],
   ) {
     super(message);
   }
@@ -93,12 +95,16 @@ export function createPayPalHttp(cfg: PayPalConfig): PayPalHttp {
       if (res.status === 401) token = null; // expired or revoked: log in again next time
       const data = await readJson(res);
       if (!res.ok) {
-        const details = Array.isArray(data.details) ? (data.details as Array<{ issue?: string }>) : [];
+        const details = Array.isArray(data.details) ? (data.details as Array<{ issue?: string; link?: Array<{ href?: unknown }> }>) : [];
+        const links = [...details.flatMap((d) => d.link ?? []), ...(Array.isArray(data.links) ? (data.links as Array<{ href?: unknown }>) : [])]
+          .map((l) => l.href)
+          .filter((h): h is string => typeof h === "string");
         throw new PayPalError(
           res.status,
           details[0]?.issue ?? String(data.name ?? "PAYPAL_ERROR"),
           String(data.message ?? `PayPal returned ${res.status}`),
           typeof data.debug_id === "string" ? data.debug_id : null,
+          links,
         );
       }
       return data as T;
