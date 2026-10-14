@@ -1644,7 +1644,10 @@ No new code. This runs once the app is on Render with an https address (Plan 3's
   - Homepage: the Render URL.
   - Callback: `<URL>/maintainer/github/callback`.
   - Its client id and secret go into Render's environment as `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, never into the repo.
-- **Log in with PayPal's return URL.** Claude sets `<URL>/maintainer/paypal/callback` in the PayPal developer dashboard (app "Upstream", Log in with PayPal settings), which needs Arun's PayPal login.
+- **Log in with PayPal's settings.** In the PayPal developer dashboard (app "Upstream", Log in with PayPal), which needs Arun's PayPal login, Claude:
+  - sets the return URL to `<URL>/maintainer/paypal/callback`
+  - turns on the "PayPal account ID" and "Account verification status" attributes, without which a link shows "isn't fully set up"
+  - records whether PayPal echoes `state` on success and on cancel
 - **The sandbox maintainer test account's password.** Claude creates a new one with a self-set password, as in Plan 2a, so nothing is read off the screen.
 
 - [ ] **Step 1: Sign in with GitHub on the hosted page**

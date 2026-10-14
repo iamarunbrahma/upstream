@@ -83,6 +83,25 @@ describe("Log in with PayPal", () => {
     expect(header(f.calls[1]!, "authorization")).toBe("Bearer A21-user");
   });
 
+  it("reports an attribute PayPal left out as missing, not as an unverified account", async () => {
+    const noVerified = fakeFetch([
+      { status: 200, body: { access_token: "t" } },
+      { status: 200, body: { payer_id: "PAYER-3" } },
+    ]);
+    expect(await createPayPalIdentity({ clientId: "i", clientSecret: "s", apiBase: "https://api.test", fetchImpl: noVerified.impl }).identify("c", ppBack)).toEqual({
+      payerId: "PAYER-3",
+      verified: null,
+    });
+    const noPayer = fakeFetch([
+      { status: 200, body: { access_token: "t" } },
+      { status: 200, body: { verified_account: "true" } },
+    ]);
+    expect(await createPayPalIdentity({ clientId: "i", clientSecret: "s", apiBase: "https://api.test", fetchImpl: noPayer.impl }).identify("c", ppBack)).toEqual({
+      payerId: null,
+      verified: true,
+    });
+  });
+
   it("reports an unverified account as such, and answers null for a code PayPal refuses", async () => {
     const unverified = fakeFetch([
       { status: 200, body: { access_token: "t" } },

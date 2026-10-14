@@ -29,6 +29,13 @@ export async function GET(req: Request): Promise<Response> {
     return plainPage("Couldn't reach PayPal. Please try again.", 502, [clear]);
   }
   if (!account) return plainPage("PayPal didn't confirm your account. Please try again.", 400, [clear]);
-  const result = await linkPayPal(deps.db, me.githubId, account);
+  if (account.payerId === null || account.verified === null) {
+    // A setup problem on our side, not the maintainer's: the app's Log in with PayPal settings don't ask for it.
+    console.error(
+      `Log in with PayPal returned no ${account.payerId === null ? "payer_id" : "verified_account"}: turn on "PayPal account ID" and "Account verification status" in the app's Log in with PayPal settings.`,
+    );
+    return plainPage("Linking PayPal isn't fully set up on this server yet. Please try again later.", 503, [clear]);
+  }
+  const result = await linkPayPal(deps.db, me.githubId, { payerId: account.payerId, verified: account.verified });
   return redirect(`/maintainer?paypal=${RESULT[result]}`, [clear]);
 }

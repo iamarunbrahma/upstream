@@ -3,8 +3,11 @@ import { SANDBOX_API } from "../paypal/client";
 /** Log in with PayPal, used only to learn which PayPal account a maintainer owns. */
 export interface PayPalIdentity {
   authorizeUrl(state: string, redirectUri: string): string;
-  /** The PayPal account behind a sign-in code, and whether PayPal verified it; null when PayPal refuses the code. */
-  identify(code: string, redirectUri: string): Promise<{ payerId: string; verified: boolean } | null>;
+  /**
+   * The PayPal account behind a sign-in code, and whether PayPal verified it; null when PayPal refuses the code.
+   * An attribute PayPal leaves out is null: that means the app's Log in with PayPal settings don't ask for it.
+   */
+  identify(code: string, redirectUri: string): Promise<{ payerId: string | null; verified: boolean | null } | null>;
 }
 
 /** openid plus "PayPal account attributes", which carries payer_id and verified_account. */
@@ -36,8 +39,10 @@ export function createPayPalIdentity(cfg: { clientId: string; clientSecret: stri
         signal: timeout(),
       });
       const info = (await infoRes.json().catch(() => ({}))) as { payer_id?: unknown; verified_account?: unknown };
-      if (!infoRes.ok || typeof info.payer_id !== "string" || !info.payer_id) return null;
-      return { payerId: info.payer_id, verified: info.verified_account === true || info.verified_account === "true" };
+      if (!infoRes.ok) return null;
+      const payerId = typeof info.payer_id === "string" && info.payer_id ? info.payer_id : null;
+      const verified = info.verified_account === undefined || info.verified_account === null ? null : info.verified_account === true || info.verified_account === "true";
+      return { payerId, verified };
     },
   };
 }

@@ -19,7 +19,7 @@ const { POST: signOut } = await import("../app/maintainer/signout/route");
 
 /** Who GitHub and PayPal say each code belongs to. */
 let githubCodes: Record<string, { id: number; login: string } | null>;
-let paypalCodes: Record<string, { payerId: string; verified: boolean } | null>;
+let paypalCodes: Record<string, { payerId: string | null; verified: boolean | null } | null>;
 const githubOAuth: GithubOAuth = {
   authorizeUrl: (state, redirectUri) => `https://github.test/authorize?state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`,
   identify: async (code) => githubCodes[code] ?? null,
@@ -125,6 +125,17 @@ describe("Log in with PayPal routes", () => {
     expect(done.headers.get("location")).toBe("/maintainer?paypal=linked");
     const [row] = await h.deps.db.select().from(maintainers).where(eq(maintainers.githubId, 7));
     expect(row!.paypalPayerId).toBe("PAYER-A");
+  });
+
+  it("explain a server setup problem, not the maintainer's, when PayPal leaves out an account attribute", async () => {
+    paypalCodes.partial = { payerId: "PAYER-P", verified: null };
+    const alice = await signIn("alice");
+    const state = cookieValue(await paypalStart(get("/maintainer/paypal/start", { [MAINTAINER_COOKIE]: alice })), OAUTH_COOKIE)!;
+    const res = await paypalCallback(get(`/maintainer/paypal/callback?code=partial&state=${state}`, { [MAINTAINER_COOKIE]: alice, [OAUTH_COOKIE]: state }));
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain("isn't fully set up");
+    const [row] = await h.deps.db.select().from(maintainers).where(eq(maintainers.githubId, 7));
+    expect(row!.paypalPayerId).toBeNull();
   });
 
   it("tell the maintainer when PayPal won't link the account", async () => {
