@@ -1,0 +1,33 @@
+# Keeps Upstream's Render bill inside the hackathon credit (see apps/web/lib/ops/render-guard.ts).
+# Needs the RENDER_API_KEY repository secret. Fails, and so emails the owner, when it suspends anything.
+name: Render budget guard
+
+on:
+  schedule:
+    - cron: "15 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-guard
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web render-guard
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GUARD_END_DATE: "2026-12-16"
+          GUARD_BANDWIDTH_CAP_GB: "30"

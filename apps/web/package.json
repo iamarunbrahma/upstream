@@ -15,7 +15,8 @@
     "claim-maintainer": "node --env-file-if-exists=.env.local --import tsx scripts/claim-maintainer.ts",
     "resolve-payout-check": "node --env-file-if-exists=.env.local --import tsx scripts/resolve-payout-check.ts",
     "usage-index": "node --import tsx scripts/usage-index.ts",
-    "workflows": "node --env-file-if-exists=.env.local --import tsx workflows/index.ts"
+    "workflows": "node --env-file-if-exists=.env.local --import tsx workflows/index.ts",
+    "render-guard": "node --import tsx scripts/render-guard.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.9",
